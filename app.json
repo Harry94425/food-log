@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "food-log",
+    "name": "飲食紀錄",
     "slug": "food-log",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -16,10 +16,29 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.harry94425.foodlog"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      "expo-sqlite",
+      "expo-secure-store",
+      "expo-sharing",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "拍攝餐點照片以辨識食物與熱量",
+          "photosPermission": "從相簿選擇餐點照片"
+        }
+      ]
+    ],
+    "scheme": "foodlog",
+    "experiments": {
+      "typedRoutes": true
     }
   }
 }
