@@ -113,6 +113,7 @@ export function DayView({ date }: { date: string }) {
               <Text style={[ui.title, { flex: 1 }]} numberOfLines={1}>
                 <Text style={ui.muted}>{MEAL_LABELS[meal.meal_type]} </Text>
                 {mealTitle(meal)}
+                {meal.store ? <Text style={ui.muted}> @{meal.store}</Text> : null}
               </Text>
               <Text style={ui.text}>
                 {Math.round(t.kcal)} kcal{meal.price != null ? ` · $${meal.price}` : ''}

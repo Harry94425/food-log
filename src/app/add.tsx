@@ -3,8 +3,19 @@ import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { DateField } from '@/components/DateField';
 import { colors, ui } from '@/components/theme';
-import { getMeal, insertMeal, MEAL_LABELS, MealType, sumItems, toDateKey, updateMeal } from '@/lib/db';
+import {
+  getMeal,
+  insertMeal,
+  MEAL_LABELS,
+  MealType,
+  PastMeal,
+  searchPastMeals,
+  sumItems,
+  toDateKey,
+  updateMeal,
+} from '@/lib/db';
 import { deletePhoto, persistPhoto, pickPhoto, PickedPhoto } from '@/lib/photo';
 import type { FoodItem } from '@/lib/recognizer/types';
 import { getRecognizer } from '@/lib/settings';
@@ -20,13 +31,17 @@ const NUM_FIELDS: { key: NumField; label: string }[] = [
   { key: 'fat', label: '脂肪' },
 ];
 
+/** 依現在時間預設餐別：[開始小時, 結束小時(不含), 餐別]，其他時間算宵夜 */
+const MEAL_HOURS: [number, number, MealType][] = [
+  [5, 11, 'breakfast'], // 05:00–10:59
+  [11, 14, 'lunch'], // 11:00–13:59
+  [14, 17, 'snack'], // 14:00–16:59
+  [17, 21, 'dinner'], // 17:00–20:59
+];
+
 function defaultMealType(): MealType {
   const h = new Date().getHours();
-  if (h < 10) return 'breakfast';
-  if (h < 15) return 'lunch';
-  if (h >= 17 && h < 21) return 'dinner';
-  if (h >= 21 || h < 4) return 'late_night';
-  return 'snack';
+  return MEAL_HOURS.find(([start, end]) => h >= start && h < end)?.[2] ?? 'late_night';
 }
 
 const toDraft = (i: FoodItem): DraftItem => ({
@@ -58,7 +73,10 @@ export default function MealEditorScreen() {
   const [date, setDate] = useState(params.date ?? toDateKey());
   const [mealType, setMealType] = useState<MealType>(defaultMealType());
   const [title, setTitle] = useState('');
+  const [store, setStore] = useState('');
   const [price, setPrice] = useState('');
+  const [pastQuery, setPastQuery] = useState('');
+  const [pastMeals, setPastMeals] = useState<PastMeal[]>([]);
   /** 已存在資料庫裡的照片（編輯時） */
   const [savedPhotoUri, setSavedPhotoUri] = useState<string | null>(null);
   /** 這次新拍或新選的照片 */
@@ -82,6 +100,7 @@ export default function MealEditorScreen() {
       setDate(meal.date);
       setMealType(meal.meal_type);
       setTitle(meal.title);
+      setStore(meal.store);
       setPrice(meal.price != null ? String(meal.price) : '');
       setSavedPhotoUri(meal.photo_uri);
       setNote(meal.note);
@@ -89,6 +108,23 @@ export default function MealEditorScreen() {
       setLoaded(true);
     })();
   }, [db, editId]);
+
+  // 新增時列出吃過的餐點，可直接帶入省掉辨識
+  const showPast = editId == null && items.length === 0;
+  useEffect(() => {
+    if (!showPast) return;
+    searchPastMeals(db, pastQuery).then(setPastMeals);
+  }, [db, pastQuery, showPast]);
+
+  const applyPast = async (id: number) => {
+    const meal = await getMeal(db, id);
+    if (!meal) return;
+    setTitle(meal.title);
+    setStore(meal.store);
+    setPrice(meal.price != null ? String(meal.price) : '');
+    setItems(meal.items.map(toDraft));
+    setNote('');
+  };
 
   const photoUri = photo?.uri ?? savedPhotoUri;
 
@@ -147,10 +183,6 @@ export default function MealEditorScreen() {
       Alert.alert('沒有食物', '請先辨識照片或手動新增品項。');
       return;
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      Alert.alert('日期格式不對', '請用 YYYY-MM-DD，例如 2026-10-30。');
-      return;
-    }
     const priceNum = price.trim() === '' ? null : Number(price);
     if (priceNum != null && !(priceNum >= 0)) {
       Alert.alert('價錢格式不對', '請輸入數字，或留空。');
@@ -163,6 +195,7 @@ export default function MealEditorScreen() {
         date,
         meal_type: mealType,
         title: title.trim(),
+        store: store.trim(),
         price: priceNum,
         photo_uri: newPhotoUri,
         note,
@@ -207,14 +240,39 @@ export default function MealEditorScreen() {
       </View>
       <View style={ui.row}>
         <Text style={ui.muted}>日期</Text>
-        <TextInput
-          style={[ui.input, { flex: 1 }]}
-          value={date}
-          onChangeText={setDate}
-          placeholder="YYYY-MM-DD"
-          autoCorrect={false}
-        />
+        <DateField value={date} onChange={setDate} />
       </View>
+
+      {showPast && (
+        <View style={ui.card}>
+          <Text style={ui.title}>吃過一樣的？直接帶入</Text>
+          <TextInput
+            style={ui.input}
+            value={pastQuery}
+            onChangeText={setPastQuery}
+            placeholder="搜尋店家或餐點名稱"
+            autoCorrect={false}
+          />
+          {pastMeals.length === 0 && (
+            <Text style={ui.muted}>{pastQuery ? '找不到符合的紀錄。' : '還沒有紀錄，存過的餐點會出現在這裡。'}</Text>
+          )}
+          {pastMeals.map((m) => (
+            <Pressable
+              key={m.id}
+              onPress={() => applyPast(m.id)}
+              style={{ paddingVertical: 6, borderTopWidth: 1, borderTopColor: colors.border }}
+            >
+              <Text style={ui.text}>
+                {m.store ? <Text style={ui.muted}>{m.store}・</Text> : null}
+                {m.title}
+              </Text>
+              <Text style={ui.muted}>
+                {Math.round(m.kcal)} kcal{m.price != null ? ` · $${m.price}` : ''} · 吃過 {m.times} 次
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
 
       <TextInput
         style={ui.input}
@@ -251,6 +309,8 @@ export default function MealEditorScreen() {
       <View style={ui.card}>
         <Text style={ui.muted}>餐點名稱</Text>
         <TextInput style={ui.input} value={title} onChangeText={setTitle} placeholder="例如：豬排咖哩飯" />
+        <Text style={ui.muted}>店家（選填）</Text>
+        <TextInput style={ui.input} value={store} onChangeText={setStore} placeholder="例如：學餐二樓、7-11" />
         <Text style={ui.muted}>價錢（元，選填）</Text>
         <TextInput
           style={ui.input}

@@ -3,9 +3,52 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { colors, ui } from '@/components/theme';
-import { DaySummary, getDaySummaries, getMonthSpending, getWeights, toDateKey, Totals } from '@/lib/db';
+import {
+  DaySummary,
+  emptyDay,
+  getDaySummaries,
+  getMonthSpending,
+  getWeights,
+  toDateKey,
+  Totals,
+  weekdayLabel,
+} from '@/lib/db';
+import { getSettings, goalsForDay } from '@/lib/settings';
+
+/** 列表固定顯示最近幾天（沒紀錄的也列出來） */
+const RECENT_DAYS = 30;
+/** 今天過了這個時間還沒記，才標示缺午餐／晚餐 */
+const LUNCH_DEADLINE_HOUR = 14;
+const DINNER_DEADLINE_HOUR = 21;
 
 type MonthSpend = { label: string; total: number; days: number; meals: number };
+
+/** 最近 RECENT_DAYS 天每天一列，再接上更早有紀錄的日子 */
+function fillDays(summaries: DaySummary[]): DaySummary[] {
+  const byDate = new Map(summaries.map((s) => [s.date, s]));
+  const days: DaySummary[] = [];
+  const d = new Date();
+  for (let i = 0; i < RECENT_DAYS; i++) {
+    const key = toDateKey(d);
+    days.push(byDate.get(key) ?? emptyDay(key));
+    byDate.delete(key);
+    d.setDate(d.getDate() - 1);
+  }
+  return [...days, ...[...byDate.values()].sort((a, b) => b.date.localeCompare(a.date))];
+}
+
+/** 這一天要提醒的缺漏 */
+function missingLabels(day: DaySummary): string[] {
+  const isToday = day.date === toDateKey();
+  const hour = new Date().getHours();
+  if (day.meal_count === 0) {
+    return isToday && hour < LUNCH_DEADLINE_HOUR ? [] : ['沒有紀錄'];
+  }
+  const missing: string[] = [];
+  if (!day.has_lunch && (!isToday || hour >= LUNCH_DEADLINE_HOUR)) missing.push('缺午餐');
+  if (!day.has_dinner && (!isToday || hour >= DINNER_DEADLINE_HOUR)) missing.push('缺晚餐');
+  return missing;
+}
 
 /** 本月與上個月的 YYYY-MM */
 function recentMonths(): { key: string; label: string }[] {
@@ -16,7 +59,6 @@ function recentMonths(): { key: string; label: string }[] {
     { key: toDateKey(prev).slice(0, 7), label: '上個月' },
   ];
 }
-import { getSettings, goalsForDay } from '@/lib/settings';
 
 type WeekAvg = { label: string; avg: number; count: number };
 
@@ -61,7 +103,7 @@ export default function HistoryScreen() {
           getWeights(db, toDateKey(since)),
           ...monthKeys.map((mk) => getMonthSpending(db, mk.key)),
         ]);
-        setDays(d);
+        setDays(fillDays(d));
         setGoals(s.goals);
         setWeeks(weeklyAverages(w));
         setMonths(monthKeys.map((mk, i) => ({ label: mk.label, ...m[i] })));
@@ -121,35 +163,70 @@ export default function HistoryScreen() {
           </View>
         </View>
       }
-      ListEmptyComponent={<Text style={ui.muted}>還沒有任何紀錄。</Text>}
       renderItem={({ item }) => {
         const g = goals ? goalsForDay(goals, item.exercise_kcal) : null;
         const kcalOk = g ? item.kcal >= g.kcal * 0.95 : false;
         const proteinOk = g ? item.protein >= g.protein * 0.95 : false;
+        const missing = missingLabels(item);
+        const empty = item.meal_count === 0;
         return (
           <Pressable
-            style={[ui.card, { marginBottom: 8 }]}
+            style={[
+              ui.card,
+              { marginBottom: 8 },
+              missing.length > 0 && {
+                borderColor: empty ? colors.danger : colors.fat,
+                borderWidth: 1,
+                backgroundColor: empty ? '#FEF2F2' : '#FFFBEB',
+              },
+            ]}
             onPress={() => router.push({ pathname: '/day/[date]', params: { date: item.date } })}
           >
             <View style={[ui.row, { justifyContent: 'space-between' }]}>
-              <Text style={[ui.text, { fontWeight: '700' }]}>{item.date}</Text>
+              <Text style={[ui.text, { fontWeight: '700' }]}>
+                {item.date} <Text style={ui.muted}>{weekdayLabel(item.date)}</Text>
+              </Text>
               <Text style={ui.muted}>
                 {item.spent > 0 ? `$${Math.round(item.spent)}` : ''}
                 {item.spent > 0 && item.weight != null ? ' · ' : ''}
                 {item.weight != null ? `${item.weight} kg` : ''}
               </Text>
             </View>
-            <Text style={ui.text}>
-              <Text style={{ color: kcalOk ? colors.carbs : colors.text }}>
-                {Math.round(item.kcal)}
-                {g ? ` / ${g.kcal}` : ''} kcal
+            {missing.length > 0 && (
+              <View style={ui.row}>
+                {missing.map((m) => (
+                  <Text
+                    key={m}
+                    style={{
+                      color: '#fff',
+                      backgroundColor: empty ? colors.danger : colors.fat,
+                      borderRadius: 6,
+                      paddingHorizontal: 6,
+                      paddingVertical: 2,
+                      fontSize: 12,
+                      fontWeight: '600',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {m}
+                  </Text>
+                ))}
+                <Text style={ui.muted}>點一下補記</Text>
+              </View>
+            )}
+            {!empty && (
+              <Text style={ui.text}>
+                <Text style={{ color: kcalOk ? colors.carbs : colors.text }}>
+                  {Math.round(item.kcal)}
+                  {g ? ` / ${g.kcal}` : ''} kcal
+                </Text>
+                {'  ·  '}
+                <Text style={{ color: proteinOk ? colors.carbs : colors.protein }}>
+                  蛋白 {Math.round(item.protein)}
+                  {g ? ` / ${g.protein}` : ''} g
+                </Text>
               </Text>
-              {'  ·  '}
-              <Text style={{ color: proteinOk ? colors.carbs : colors.protein }}>
-                蛋白 {Math.round(item.protein)}
-                {g ? ` / ${g.protein}` : ''} g
-              </Text>
-            </Text>
+            )}
             {item.exercise_kcal > 0 && <Text style={ui.muted}>運動 +{item.exercise_kcal} kcal</Text>}
           </Pressable>
         );
