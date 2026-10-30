@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import type { FoodItem } from './recognizer/types';
 
 export const DB_NAME = 'foodlog.db';
-const DATABASE_VERSION = 6;
+const DATABASE_VERSION = 7;
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'late_night' | 'snack' | 'drink' | 'ride_fuel';
 
@@ -142,7 +142,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
     `);
   }
   if (current < 5) {
-    // Strava 活動改成以 Strava 為準、不能在 App 刪除：之前隱藏的都放回來，hidden 欄位不再使用
+    // Strava 活動改成以 Strava 為準、不能在 App 刪除：之前隱藏的都放回來（hidden 欄位在 v7 刪除）
     await db.execAsync(`UPDATE exercises SET hidden = 0;`);
   }
   if (current < 6) {
@@ -162,6 +162,10 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
         updated_at INTEGER NOT NULL
       );
     `);
+  }
+  if (current < 7) {
+    // v5 起沒在用的 hidden 欄位（以前 Strava 活動「刪除」只隱藏），拿掉
+    await db.execAsync(`ALTER TABLE exercises DROP COLUMN hidden;`);
   }
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
 }
