@@ -12,6 +12,7 @@ import {
   getWeight,
   Meal,
   MEAL_LABELS,
+  mealTitle,
   setWeight,
   sumItems,
 } from '@/lib/db';
@@ -51,6 +52,7 @@ export function DayView({ date }: { date: string }) {
 
   const totals = sumItems(meals.flatMap((m) => m.items));
   const exerciseKcal = exercises.reduce((s, e) => s + e.kcal, 0);
+  const spent = meals.reduce((s, m) => s + (m.price ?? 0), 0);
   const goals = baseGoals ? goalsForDay(baseGoals, exerciseKcal) : null;
 
   const onAddExercise = async () => {
@@ -67,7 +69,7 @@ export function DayView({ date }: { date: string }) {
   };
 
   const onDeleteMeal = (meal: Meal) => {
-    Alert.alert('刪除這一餐？', meal.items.map((i) => i.name).join('、'), [
+    Alert.alert('刪除這一餐？', mealTitle(meal), [
       { text: '取消', style: 'cancel' },
       {
         text: '刪除',
@@ -90,6 +92,7 @@ export function DayView({ date }: { date: string }) {
           <ProgressBar label="碳水" value={totals.carbs} goal={goals.carbs} unit="g" color={colors.carbs} />
           <ProgressBar label="脂肪" value={totals.fat} goal={goals.fat} unit="g" color={colors.fat} />
           {exerciseKcal > 0 && <Text style={ui.muted}>已含運動消耗 +{exerciseKcal} kcal（用碳水補足）</Text>}
+          <Text style={[ui.text, { fontWeight: '600' }]}>今日餐費 ${Math.round(spent)}</Text>
         </View>
       )}
 
@@ -100,10 +103,20 @@ export function DayView({ date }: { date: string }) {
       {meals.map((meal) => {
         const t = sumItems(meal.items);
         return (
-          <Pressable key={meal.id} style={ui.card} onLongPress={() => onDeleteMeal(meal)}>
+          <Pressable
+            key={meal.id}
+            style={ui.card}
+            onPress={() => router.push({ pathname: '/add', params: { id: String(meal.id) } })}
+            onLongPress={() => onDeleteMeal(meal)}
+          >
             <View style={[ui.row, { justifyContent: 'space-between' }]}>
-              <Text style={ui.title}>{MEAL_LABELS[meal.meal_type]}</Text>
-              <Text style={ui.text}>{Math.round(t.kcal)} kcal</Text>
+              <Text style={[ui.title, { flex: 1 }]} numberOfLines={1}>
+                <Text style={ui.muted}>{MEAL_LABELS[meal.meal_type]} </Text>
+                {mealTitle(meal)}
+              </Text>
+              <Text style={ui.text}>
+                {Math.round(t.kcal)} kcal{meal.price != null ? ` · $${meal.price}` : ''}
+              </Text>
             </View>
             <View style={[ui.row, { alignItems: 'flex-start' }]}>
               {meal.photo_uri && (
@@ -118,7 +131,7 @@ export function DayView({ date }: { date: string }) {
               </View>
             </View>
             <Text style={ui.muted}>
-              蛋白 {Math.round(t.protein)}g · 碳水 {Math.round(t.carbs)}g · 脂肪 {Math.round(t.fat)}g（長按刪除）
+              蛋白 {Math.round(t.protein)}g · 碳水 {Math.round(t.carbs)}g · 脂肪 {Math.round(t.fat)}g（點一下編輯，長按刪除）
             </Text>
           </Pressable>
         );

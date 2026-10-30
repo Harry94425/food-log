@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import type { FoodItem } from './recognizer/types';
 
 export const DB_NAME = 'foodlog.db';
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
@@ -17,17 +17,39 @@ export type Meal = {
   id: number;
   date: string;
   meal_type: MealType;
+  title: string;
+  price: number | null;
   photo_uri: string | null;
   note: string;
   created_at: number;
   items: (FoodItem & { id: number })[];
 };
 
+export type MealInput = {
+  date: string;
+  meal_type: MealType;
+  title: string;
+  price: number | null;
+  photo_uri: string | null;
+  note: string;
+  items: FoodItem[];
+};
+
 export type Exercise = { id: number; date: string; name: string; kcal: number };
 
 export type Totals = { kcal: number; protein: number; fat: number; carbs: number };
 
-export type DaySummary = Totals & { date: string; exercise_kcal: number; weight: number | null };
+export type DaySummary = Totals & {
+  date: string;
+  exercise_kcal: number;
+  weight: number | null;
+  spent: number;
+};
+
+/** 沒有名稱的舊紀錄，用品項名稱代替 */
+export function mealTitle(meal: Pick<Meal, 'title' | 'items'>) {
+  return meal.title || meal.items.map((i) => i.name).join('、') || '未命名';
+}
 
 export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
@@ -74,6 +96,13 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       );
     `);
   }
+  if (current < 2) {
+    // 餐點名稱（例如：豬排咖哩飯）與價錢（元，可不填）
+    await db.execAsync(`
+      ALTER TABLE meals ADD COLUMN title TEXT NOT NULL DEFAULT '';
+      ALTER TABLE meals ADD COLUMN price REAL;
+    `);
+  }
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
 }
 
@@ -83,32 +112,63 @@ export function toDateKey(d = new Date()) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-export async function insertMeal(
-  db: SQLiteDatabase,
-  meal: { date: string; meal_type: MealType; photo_uri: string | null; note: string; items: FoodItem[] },
-) {
+async function insertItems(db: SQLiteDatabase, mealId: number, items: FoodItem[]) {
+  for (const i of items) {
+    await db.runAsync(
+      'INSERT INTO food_items (meal_id, name, portion, kcal, protein, fat, carbs) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      mealId,
+      i.name,
+      i.portion,
+      i.kcal,
+      i.protein,
+      i.fat,
+      i.carbs,
+    );
+  }
+}
+
+export async function insertMeal(db: SQLiteDatabase, meal: MealInput) {
   await db.withTransactionAsync(async () => {
     const { lastInsertRowId } = await db.runAsync(
-      'INSERT INTO meals (date, meal_type, photo_uri, note, created_at) VALUES (?, ?, ?, ?, ?)',
+      'INSERT INTO meals (date, meal_type, title, price, photo_uri, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
       meal.date,
       meal.meal_type,
+      meal.title,
+      meal.price,
       meal.photo_uri,
       meal.note,
       Date.now(),
     );
-    for (const i of meal.items) {
-      await db.runAsync(
-        'INSERT INTO food_items (meal_id, name, portion, kcal, protein, fat, carbs) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        lastInsertRowId,
-        i.name,
-        i.portion,
-        i.kcal,
-        i.protein,
-        i.fat,
-        i.carbs,
-      );
-    }
+    await insertItems(db, lastInsertRowId, meal.items);
   });
+}
+
+/** 更新整筆餐點；品項全部換成新的 */
+export async function updateMeal(db: SQLiteDatabase, id: number, meal: MealInput) {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      'UPDATE meals SET date = ?, meal_type = ?, title = ?, price = ?, photo_uri = ?, note = ? WHERE id = ?',
+      meal.date,
+      meal.meal_type,
+      meal.title,
+      meal.price,
+      meal.photo_uri,
+      meal.note,
+      id,
+    );
+    await db.runAsync('DELETE FROM food_items WHERE meal_id = ?', id);
+    await insertItems(db, id, meal.items);
+  });
+}
+
+export async function getMeal(db: SQLiteDatabase, id: number): Promise<Meal | null> {
+  const meal = await db.getFirstAsync<Omit<Meal, 'items'>>('SELECT * FROM meals WHERE id = ?', id);
+  if (!meal) return null;
+  const items = await db.getAllAsync<FoodItem & { id: number }>(
+    'SELECT * FROM food_items WHERE meal_id = ? ORDER BY id',
+    id,
+  );
+  return { ...meal, items };
 }
 
 export async function deleteMeal(db: SQLiteDatabase, id: number) {
@@ -180,16 +240,30 @@ export async function getDaySummaries(db: SQLiteDatabase, limit = 60): Promise<D
        COALESCE((SELECT SUM(f.fat) FROM food_items f JOIN meals m ON m.id = f.meal_id WHERE m.date = d.date), 0) AS fat,
        COALESCE((SELECT SUM(f.carbs) FROM food_items f JOIN meals m ON m.id = f.meal_id WHERE m.date = d.date), 0) AS carbs,
        COALESCE((SELECT SUM(kcal) FROM exercises e WHERE e.date = d.date), 0) AS exercise_kcal,
-       (SELECT kg FROM weights w WHERE w.date = d.date) AS weight
+       (SELECT kg FROM weights w WHERE w.date = d.date) AS weight,
+       COALESCE((SELECT SUM(price) FROM meals m WHERE m.date = d.date), 0) AS spent
      FROM days d ORDER BY d.date DESC LIMIT ?`,
     limit,
   );
 }
 
+/** 某個月（YYYY-MM）的餐費合計與有紀錄的天數 */
+export async function getMonthSpending(db: SQLiteDatabase, month: string) {
+  const row = await db.getFirstAsync<{ total: number; days: number; meals: number }>(
+    `SELECT COALESCE(SUM(price), 0) AS total, COUNT(DISTINCT date) AS days, COUNT(price) AS meals
+     FROM meals WHERE date LIKE ? AND price IS NOT NULL`,
+    `${month}-%`,
+  );
+  return row ?? { total: 0, days: 0, meals: 0 };
+}
+
 export async function exportCsv(db: SQLiteDatabase) {
   const rows = await db.getAllAsync<{
+    meal_id: number;
     date: string;
     meal_type: MealType;
+    title: string;
+    price: number | null;
     name: string;
     portion: string;
     kcal: number;
@@ -197,15 +271,22 @@ export async function exportCsv(db: SQLiteDatabase) {
     fat: number;
     carbs: number;
   }>(
-    `SELECT m.date, m.meal_type, f.name, f.portion, f.kcal, f.protein, f.fat, f.carbs
+    `SELECT f.meal_id, m.date, m.meal_type, m.title, m.price, f.name, f.portion, f.kcal, f.protein, f.fat, f.carbs
      FROM food_items f JOIN meals m ON m.id = f.meal_id ORDER BY m.date, m.created_at, f.id`,
   );
   const esc = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`;
+  // 價錢是整餐的，只寫在該餐第一列，加總時才不會重複
+  const seen = new Set<number>();
   const lines = [
-    ['日期', '餐別', '食物', '份量', '熱量', '蛋白質', '脂肪', '碳水'].join(','),
-    ...rows.map((r) =>
-      [r.date, MEAL_LABELS[r.meal_type], r.name, r.portion, r.kcal, r.protein, r.fat, r.carbs].map(esc).join(','),
-    ),
+    ['日期', '餐別', '餐點', '價錢', '食物', '份量', '熱量', '蛋白質', '脂肪', '碳水'].join(','),
+    ...rows.map((r) => {
+      const first = !seen.has(r.meal_id);
+      seen.add(r.meal_id);
+      const price = first && r.price != null ? r.price : '';
+      return [r.date, MEAL_LABELS[r.meal_type], r.title, price, r.name, r.portion, r.kcal, r.protein, r.fat, r.carbs]
+        .map(esc)
+        .join(',');
+    }),
   ];
   // 加 BOM 讓 Excel 正確顯示中文
   return '﻿' + lines.join('\n');

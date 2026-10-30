@@ -1,10 +1,11 @@
-import { router, useLocalSearchParams } from 'expo-router';
+import { File } from 'expo-file-system';
+import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { colors, ui } from '@/components/theme';
-import { insertMeal, MEAL_LABELS, MealType, sumItems, toDateKey } from '@/lib/db';
-import { persistPhoto, pickPhoto, PickedPhoto } from '@/lib/photo';
+import { getMeal, insertMeal, MEAL_LABELS, MealType, sumItems, toDateKey, updateMeal } from '@/lib/db';
+import { deletePhoto, persistPhoto, pickPhoto, PickedPhoto } from '@/lib/photo';
 import type { FoodItem } from '@/lib/recognizer/types';
 import { getRecognizer } from '@/lib/settings';
 
@@ -28,7 +29,8 @@ function defaultMealType(): MealType {
 }
 
 const toDraft = (i: FoodItem): DraftItem => ({
-  ...i,
+  name: i.name,
+  portion: i.portion,
   kcal: String(i.kcal),
   protein: String(i.protein),
   fat: String(i.fat),
@@ -46,18 +48,48 @@ const fromDraft = (d: DraftItem): FoodItem => ({
 
 const EMPTY: DraftItem = { name: '', portion: '', kcal: '', protein: '', fat: '', carbs: '' };
 
-export default function AddMealScreen() {
+/** 新增或編輯餐點；帶 id 參數時是編輯 */
+export default function MealEditorScreen() {
   const db = useSQLiteContext();
-  const params = useLocalSearchParams<{ date?: string }>();
-  const date = params.date ?? toDateKey();
+  const params = useLocalSearchParams<{ date?: string; id?: string }>();
+  const editId = params.id ? Number(params.id) : null;
 
+  const [date, setDate] = useState(params.date ?? toDateKey());
   const [mealType, setMealType] = useState<MealType>(defaultMealType());
+  const [title, setTitle] = useState('');
+  const [price, setPrice] = useState('');
+  /** 已存在資料庫裡的照片（編輯時） */
+  const [savedPhotoUri, setSavedPhotoUri] = useState<string | null>(null);
+  /** 這次新拍或新選的照片 */
   const [photo, setPhoto] = useState<PickedPhoto | null>(null);
   const [hint, setHint] = useState('');
   const [items, setItems] = useState<DraftItem[]>([]);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
+  const [loaded, setLoaded] = useState(editId == null);
+
+  useEffect(() => {
+    if (editId == null) return;
+    (async () => {
+      const meal = await getMeal(db, editId);
+      if (!meal) {
+        Alert.alert('找不到這筆紀錄');
+        router.back();
+        return;
+      }
+      setDate(meal.date);
+      setMealType(meal.meal_type);
+      setTitle(meal.title);
+      setPrice(meal.price != null ? String(meal.price) : '');
+      setSavedPhotoUri(meal.photo_uri);
+      setNote(meal.note);
+      setItems(meal.items.map(toDraft));
+      setLoaded(true);
+    })();
+  }, [db, editId]);
+
+  const photoUri = photo?.uri ?? savedPhotoUri;
 
   const choose = async (source: 'camera' | 'library') => {
     try {
@@ -71,18 +103,30 @@ export default function AddMealScreen() {
     }
   };
 
-  const recognize = async (p = photo) => {
-    if (!p) return;
+  const recognize = async (p: PickedPhoto | null = photo) => {
+    let input = p;
+    // 編輯舊紀錄時，用已存的照片重新辨識
+    if (!input && savedPhotoUri) {
+      try {
+        input = { uri: savedPhotoUri, base64: await new File(savedPhotoUri).base64(), mimeType: 'image/jpeg' };
+      } catch {
+        Alert.alert('讀不到原本的照片');
+        return;
+      }
+    }
+    if (!input) return;
+
     setBusy(true);
     setStatus('辨識中…');
     try {
       const recognizer = await getRecognizer(db);
       const r = await recognizer.recognize({
-        imageBase64: p.base64,
-        mimeType: p.mimeType,
+        imageBase64: input.base64,
+        mimeType: input.mimeType,
         hint: hint.trim(),
         onStatus: setStatus,
       });
+      setTitle(r.title);
       setItems(r.items.map(toDraft));
       setNote(r.note);
     } catch (e) {
@@ -102,10 +146,34 @@ export default function AddMealScreen() {
       Alert.alert('沒有食物', '請先辨識照片或手動新增品項。');
       return;
     }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      Alert.alert('日期格式不對', '請用 YYYY-MM-DD，例如 2026-10-30。');
+      return;
+    }
+    const priceNum = price.trim() === '' ? null : Number(price);
+    if (priceNum != null && !(priceNum >= 0)) {
+      Alert.alert('價錢格式不對', '請輸入數字，或留空。');
+      return;
+    }
     setBusy(true);
     try {
-      const photoUri = photo ? persistPhoto(photo.uri) : null;
-      await insertMeal(db, { date, meal_type: mealType, photo_uri: photoUri, note, items: finalItems });
+      const newPhotoUri = photo ? persistPhoto(photo.uri) : savedPhotoUri;
+      const meal = {
+        date,
+        meal_type: mealType,
+        title: title.trim(),
+        price: priceNum,
+        photo_uri: newPhotoUri,
+        note,
+        items: finalItems,
+      };
+      if (editId != null) {
+        await updateMeal(db, editId, meal);
+        // 換了新照片才刪舊的
+        if (photo && savedPhotoUri) deletePhoto(savedPhotoUri);
+      } else {
+        await insertMeal(db, meal);
+      }
       router.back();
     } catch (e) {
       Alert.alert('儲存失敗', (e as Error).message);
@@ -115,8 +183,12 @@ export default function AddMealScreen() {
 
   const totals = sumItems(items.map(fromDraft));
 
+  if (!loaded) return <ActivityIndicator style={{ marginTop: 40 }} size="large" color={colors.primary} />;
+
   return (
     <ScrollView style={ui.screen} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
+      <Stack.Screen options={{ title: editId != null ? '編輯餐點' : '新增餐點' }} />
+
       <View style={ui.row}>
         {(Object.keys(MEAL_LABELS) as MealType[]).map((t) => (
           <Pressable
@@ -131,18 +203,27 @@ export default function AddMealScreen() {
           </Pressable>
         ))}
       </View>
-      <Text style={ui.muted}>日期：{date}</Text>
+      <View style={ui.row}>
+        <Text style={ui.muted}>日期</Text>
+        <TextInput
+          style={[ui.input, { flex: 1 }]}
+          value={date}
+          onChangeText={setDate}
+          placeholder="YYYY-MM-DD"
+          autoCorrect={false}
+        />
+      </View>
 
       <View style={ui.row}>
         <Pressable style={[ui.button, { flex: 1 }]} onPress={() => choose('camera')} disabled={busy}>
-          <Text style={ui.buttonText}>📷 拍照</Text>
+          <Text style={ui.buttonText}>📷 {photoUri ? '重拍' : '拍照'}</Text>
         </Pressable>
         <Pressable style={[ui.buttonOutline, { flex: 1 }]} onPress={() => choose('library')} disabled={busy}>
           <Text style={ui.buttonOutlineText}>🖼 選照片</Text>
         </Pressable>
       </View>
 
-      {photo && <Image source={{ uri: photo.uri }} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 12 }} />}
+      {photoUri && <Image source={{ uri: photoUri }} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 12 }} />}
 
       <TextInput
         style={ui.input}
@@ -150,7 +231,7 @@ export default function AddMealScreen() {
         onChangeText={setHint}
         placeholder="補充說明（選填），例如：飯只吃一半、無糖"
       />
-      {photo && (
+      {photoUri && (
         <Pressable style={ui.buttonOutline} onPress={() => recognize()} disabled={busy}>
           <Text style={ui.buttonOutlineText}>重新辨識</Text>
         </Pressable>
@@ -164,6 +245,19 @@ export default function AddMealScreen() {
       )}
 
       {note ? <Text style={[ui.muted, { color: colors.fat }]}>⚠️ {note}</Text> : null}
+
+      <View style={ui.card}>
+        <Text style={ui.muted}>餐點名稱</Text>
+        <TextInput style={ui.input} value={title} onChangeText={setTitle} placeholder="例如：豬排咖哩飯" />
+        <Text style={ui.muted}>價錢（元，選填）</Text>
+        <TextInput
+          style={ui.input}
+          value={price}
+          onChangeText={setPrice}
+          placeholder="例如 120"
+          keyboardType="numeric"
+        />
+      </View>
 
       {items.map((it, idx) => (
         <View key={idx} style={ui.card}>
@@ -217,7 +311,7 @@ export default function AddMealScreen() {
       )}
 
       <Pressable style={[ui.button, busy && { opacity: 0.5 }]} onPress={save} disabled={busy}>
-        <Text style={ui.buttonText}>儲存</Text>
+        <Text style={ui.buttonText}>{editId != null ? '儲存修改' : '儲存'}</Text>
       </Pressable>
     </ScrollView>
   );

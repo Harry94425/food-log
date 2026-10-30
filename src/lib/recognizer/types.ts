@@ -8,6 +8,8 @@ export type FoodItem = {
 };
 
 export type Recognition = {
+  /** 整份餐點的名稱，例如「豬排咖哩飯」 */
+  title: string;
   items: FoodItem[];
   note: string;
 };

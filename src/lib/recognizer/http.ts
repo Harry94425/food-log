@@ -48,6 +48,7 @@ export function parseRecognition(text: string): Recognition {
   const num = (v: unknown) => (typeof v === 'number' && isFinite(v) ? Math.max(0, Math.round(v * 10) / 10) : 0);
   const items = Array.isArray(raw?.items) ? raw.items : [];
   return {
+    title: String(raw?.title ?? ''),
     items: items.map((i: any) => ({
       name: String(i?.name ?? '未知食物'),
       portion: String(i?.portion ?? ''),
