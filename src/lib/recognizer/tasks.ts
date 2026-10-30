@@ -1,4 +1,4 @@
-import { LabelRecognition, Recognition, RecognizerError } from './types';
+import { FoodItem, LabelRecognition, Recognition, RecognizerError } from './types';
 
 /** 一種辨識工作：提示詞、回傳格式、解析方式。兩家 AI 共用 */
 export type RecognitionTask<T> = {
@@ -144,6 +144,33 @@ export const LABEL_TASK: RecognitionTask<LabelRecognition> = {
       servingsPerPackage: num(raw?.servings_per_package) || null,
       perServing: { kcal: num(p.kcal), protein: num(p.protein), fat: num(p.fat), carbs: num(p.carbs) },
       note: String(raw?.note ?? ''),
+    };
+  },
+};
+
+// ---- 手動輸入品項名稱，用文字估算 ----
+
+const ITEM_TEXT_PROMPT = `你是營養師。依照使用者輸入的食物名稱與份量，估計這一份的營養素。
+
+規則：
+- 以台灣常見的做法與份量為準；沒寫份量就用一般一人份（例如白飯 1 碗約 200g）。
+- name 保留使用者寫的名稱；portion 寫出你採用的份量，盡量附上克數或毫升。
+- kcal 為大卡，protein / fat / carbs 為公克，都是這一份的總量。`;
+
+export const ITEM_TEXT_TASK: RecognitionTask<FoodItem> = {
+  name: 'food_item_estimate',
+  prompt: (hint) => `${ITEM_TEXT_PROMPT}\n\n食物：${hint ?? ''}`,
+  schema: ITEM_SCHEMA,
+  strictSchema: { ...ITEM_SCHEMA, additionalProperties: false },
+  parse: (text) => {
+    const i = parseJson(text);
+    return {
+      name: String(i?.name ?? ''),
+      portion: String(i?.portion ?? ''),
+      kcal: Math.round(num(i?.kcal)),
+      protein: num(i?.protein),
+      fat: num(i?.fat),
+      carbs: num(i?.carbs),
     };
   },
 };

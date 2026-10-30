@@ -44,7 +44,7 @@ export class GeminiRecognizer implements FoodRecognizer {
   private async request(
     model: string,
     task: RecognitionTask<unknown>,
-    { imageBase64, mimeType, hint }: RecognizeInput,
+    { image, hint }: RecognizeInput,
   ): Promise<string> {
     const { res, json } = await postJson(
       ENDPOINT,
@@ -54,7 +54,7 @@ export class GeminiRecognizer implements FoodRecognizer {
         store: false,
         input: [
           { type: 'text', text: task.prompt(hint) },
-          { type: 'image', data: imageBase64, mime_type: mimeType },
+          ...(image ? [{ type: 'image', data: image.base64, mime_type: image.mimeType }] : []),
         ],
         // 估熱量、抄標示都不需要深度推理，低思考量比較快
         generation_config: { thinking_level: 'low' },

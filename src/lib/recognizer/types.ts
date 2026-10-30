@@ -32,8 +32,8 @@ export type LabelRecognition = {
 };
 
 export type RecognizeInput = {
-  imageBase64: string;
-  mimeType: string;
+  /** 沒有照片時只用文字（hint）估算 */
+  image?: { base64: string; mimeType: string };
   /** 使用者補充說明，例如「飯只吃一半」 */
   hint?: string;
   /** 重試等進度訊息 */

@@ -269,6 +269,25 @@ export async function searchPastMeals(db: SQLiteDatabase, query: string, limit =
   );
 }
 
+/**
+ * 吃過的品項（同名稱取最近一次），手動輸入時用來提示和自動帶入。
+ * query 為空字串時不查。
+ */
+export async function searchPastItems(db: SQLiteDatabase, query: string, limit = 5): Promise<FoodItem[]> {
+  const q = query.trim();
+  if (!q) return [];
+  return db.getAllAsync<FoodItem>(
+    `SELECT f.name, f.portion, f.kcal, f.protein, f.fat, f.carbs
+     FROM food_items f
+     JOIN (SELECT name, MAX(id) AS id, COUNT(*) AS times FROM food_items WHERE name LIKE ? GROUP BY name) g ON g.id = f.id
+     ORDER BY (f.name = ?) DESC, g.times DESC, f.id DESC
+     LIMIT ?`,
+    `%${q}%`,
+    q,
+    limit,
+  );
+}
+
 export async function getMeal(db: SQLiteDatabase, id: number): Promise<Meal | null> {
   const meal = await db.getFirstAsync<Omit<Meal, 'items'>>('SELECT * FROM meals WHERE id = ?', id);
   if (!meal) return null;

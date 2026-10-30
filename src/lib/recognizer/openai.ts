@@ -32,7 +32,7 @@ export class OpenAIRecognizer implements FoodRecognizer {
     throw new RecognizerError(`OpenAI 目前無法使用，請稍後再試。（${lastError?.message ?? ''}）`);
   }
 
-  private async request(task: RecognitionTask<unknown>, { imageBase64, mimeType, hint }: RecognizeInput) {
+  private async request(task: RecognitionTask<unknown>, { image, hint }: RecognizeInput) {
     const { res, json } = await postJson(
       ENDPOINT,
       { Authorization: `Bearer ${this.apiKey}` },
@@ -45,7 +45,7 @@ export class OpenAIRecognizer implements FoodRecognizer {
             role: 'user',
             content: [
               { type: 'input_text', text: task.prompt(hint) },
-              { type: 'input_image', image_url: `data:${mimeType};base64,${imageBase64}` },
+              ...(image ? [{ type: 'input_image', image_url: `data:${image.mimeType};base64,${image.base64}` }] : []),
             ],
           },
         ],

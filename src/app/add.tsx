@@ -4,6 +4,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
 import { DateField } from '@/components/DateField';
+import { DraftItem, EMPTY_ITEM, fromDraft, ItemEditor, toDraft } from '@/components/ItemEditor';
 import { KeyboardScrollView } from '@/components/KeyboardScrollView';
 import { BarcodeScanner } from '@/components/BarcodeScanner';
 import { LabelCard } from '@/components/LabelCard';
@@ -25,17 +26,6 @@ import { LABEL_TASK, MEAL_TASK } from '@/lib/recognizer/tasks';
 import type { FoodItem, LabelRecognition } from '@/lib/recognizer/types';
 import { getRecognizer } from '@/lib/settings';
 
-type NumField = 'kcal' | 'protein' | 'fat' | 'carbs';
-/** 編輯中的數字先存字串，才能輸入「12.」這種中間狀態 */
-type DraftItem = Omit<FoodItem, NumField> & Record<NumField, string>;
-
-const NUM_FIELDS: { key: NumField; label: string }[] = [
-  { key: 'kcal', label: '熱量' },
-  { key: 'protein', label: '蛋白' },
-  { key: 'carbs', label: '碳水' },
-  { key: 'fat', label: '脂肪' },
-];
-
 /** 依現在時間預設餐別：[開始小時, 結束小時(不含), 餐別]，其他時間算宵夜 */
 const MEAL_HOURS: [number, number, MealType][] = [
   [5, 11, 'breakfast'], // 05:00–10:59
@@ -48,26 +38,6 @@ function defaultMealType(): MealType {
   const h = new Date().getHours();
   return MEAL_HOURS.find(([start, end]) => h >= start && h < end)?.[2] ?? 'late_night';
 }
-
-const toDraft = (i: FoodItem): DraftItem => ({
-  name: i.name,
-  portion: i.portion,
-  kcal: String(i.kcal),
-  protein: String(i.protein),
-  fat: String(i.fat),
-  carbs: String(i.carbs),
-});
-
-const fromDraft = (d: DraftItem): FoodItem => ({
-  name: d.name.trim() || '未命名',
-  portion: d.portion.trim(),
-  kcal: Number(d.kcal) || 0,
-  protein: Number(d.protein) || 0,
-  fat: Number(d.fat) || 0,
-  carbs: Number(d.carbs) || 0,
-});
-
-const EMPTY: DraftItem = { name: '', portion: '', kcal: '', protein: '', fat: '', carbs: '' };
 
 /** 新增或編輯餐點；帶 id 參數時是編輯 */
 export default function MealEditorScreen() {
@@ -166,8 +136,7 @@ export default function MealEditorScreen() {
     try {
       const recognizer = await getRecognizer(db);
       const r = await recognizer.run(MEAL_TASK, {
-        imageBase64: input.base64,
-        mimeType: input.mimeType,
+        image: { base64: input.base64, mimeType: input.mimeType },
         hint: hint.trim(),
         onStatus: setStatus,
       });
@@ -231,7 +200,10 @@ export default function MealEditorScreen() {
     setStatus('讀取營養標示中…');
     try {
       const recognizer = await getRecognizer(db);
-      const r = await recognizer.run(LABEL_TASK, { imageBase64: p.base64, mimeType: p.mimeType, onStatus: setStatus });
+      const r = await recognizer.run(LABEL_TASK, {
+        image: { base64: p.base64, mimeType: p.mimeType },
+        onStatus: setStatus,
+      });
       if (r.perServing.kcal > 0) await saveProduct(db, { ...r, barcode, source: 'label' });
       setLabel(r);
     } catch (e) {
@@ -403,44 +375,15 @@ export default function MealEditorScreen() {
       </View>
 
       {items.map((it, idx) => (
-        <View key={idx} style={ui.card}>
-          <View style={ui.row}>
-            <TextInput
-              style={[ui.input, { flex: 2 }]}
-              value={it.name}
-              onChangeText={(v) => update(idx, { name: v })}
-              placeholder="食物"
-            />
-            <TextInput
-              style={[ui.input, { flex: 2 }]}
-              value={it.portion}
-              onChangeText={(v) => update(idx, { portion: v })}
-              placeholder="份量"
-            />
-            <Pressable onPress={() => setItems((p) => p.filter((_, i) => i !== idx))} hitSlop={8}>
-              <Text style={{ color: colors.danger, fontSize: 18 }}>✕</Text>
-            </Pressable>
-          </View>
-          <View style={ui.row}>
-            {NUM_FIELDS.map((f) => (
-              <View key={f.key} style={{ flex: 1, gap: 2 }}>
-                <Text style={ui.muted}>
-                  {f.label}
-                  {f.key === 'kcal' ? '' : '(g)'}
-                </Text>
-                <TextInput
-                  style={ui.input}
-                  value={it[f.key]}
-                  onChangeText={(v) => update(idx, { [f.key]: v })}
-                  keyboardType="decimal-pad"
-                />
-              </View>
-            ))}
-          </View>
-        </View>
+        <ItemEditor
+          key={idx}
+          item={it}
+          onChange={(patch) => update(idx, patch)}
+          onRemove={() => setItems((p) => p.filter((_, i) => i !== idx))}
+        />
       ))}
 
-      <Pressable style={ui.buttonOutline} onPress={() => setItems((p) => [...p, EMPTY])}>
+      <Pressable style={ui.buttonOutline} onPress={() => setItems((p) => [...p, EMPTY_ITEM])}>
         <Text style={ui.buttonOutlineText}>＋ 手動新增品項</Text>
       </Pressable>
 

@@ -131,9 +131,9 @@ export function DayView({ date }: { date: string }) {
               </View>
             </View>
             <Text style={ui.muted}>
-              蛋白 {Math.round(t.protein)}g · 碳水 {Math.round(t.carbs)}g · 脂肪 {Math.round(t.fat)}
-              g（點一下編輯，長按刪除）
+              蛋白 {Math.round(t.protein)}g · 碳水 {Math.round(t.carbs)}g · 脂肪 {Math.round(t.fat)}g
             </Text>
+            <Text style={ui.muted}>點一下編輯，長按刪除</Text>
           </Pressable>
         );
       })}
