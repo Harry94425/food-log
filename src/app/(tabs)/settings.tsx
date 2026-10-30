@@ -3,18 +3,12 @@ import * as Sharing from 'expo-sharing';
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { KeyboardScrollView } from '@/components/KeyboardScrollView';
+import { StravaCard } from '@/components/StravaCard';
 import { ui } from '@/components/theme';
 import { exportCsv, toDateKey, Totals } from '@/lib/db';
-import {
-  DEFAULT_GOALS,
-  getApiKey,
-  getSettings,
-  Provider,
-  PROVIDERS,
-  saveSettings,
-  setApiKey,
-} from '@/lib/settings';
+import { DEFAULT_GOALS, getApiKey, getSettings, Provider, PROVIDERS, saveSettings, setApiKey } from '@/lib/settings';
 
 const PROVIDER_KEYS = Object.keys(PROVIDERS) as Provider[];
 const defaultModels = () =>
@@ -96,7 +90,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <ScrollView style={ui.screen} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
+    <KeyboardScrollView style={ui.screen} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
       <View style={ui.card}>
         <Text style={ui.title}>AI 辨識</Text>
         <View style={ui.row}>
@@ -141,8 +135,8 @@ export default function SettingsScreen() {
       </View>
 
       <View style={ui.card}>
-        <Text style={ui.title}>每日目標（不含運動）</Text>
-        <Text style={ui.muted}>運動日會自動加上消耗熱量，並用碳水補足。</Text>
+        <Text style={ui.title}>每日目標（已含重訓）</Text>
+        <Text style={ui.muted}>騎車、跑步等另外記錄的消耗會自動加上，並用碳水補足。</Text>
         {GOAL_FIELDS.map((f) => (
           <View key={f.key} style={ui.row}>
             <Text style={[ui.text, { width: 60 }]}>{f.label}</Text>
@@ -164,9 +158,11 @@ export default function SettingsScreen() {
         <Text style={ui.buttonText}>儲存設定</Text>
       </Pressable>
 
+      <StravaCard />
+
       <Pressable style={ui.buttonOutline} onPress={onExport}>
         <Text style={ui.buttonOutlineText}>匯出 CSV 備份</Text>
       </Pressable>
-    </ScrollView>
+    </KeyboardScrollView>
   );
 }

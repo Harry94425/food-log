@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import type { FoodItem } from './recognizer/types';
 
 export const DB_NAME = 'foodlog.db';
-const DATABASE_VERSION = 3;
+const DATABASE_VERSION = 4;
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'late_night' | 'snack' | 'drink';
 
@@ -39,7 +39,7 @@ export type MealInput = {
   items: FoodItem[];
 };
 
-export type Exercise = { id: number; date: string; name: string; kcal: number };
+export type Exercise = { id: number; date: string; name: string; kcal: number; strava_id: number | null };
 
 export type Totals = { kcal: number; protein: number; fat: number; carbs: number };
 
@@ -130,6 +130,14 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   }
   if (current < 3) {
     await db.execAsync(`ALTER TABLE meals ADD COLUMN store TEXT NOT NULL DEFAULT '';`);
+  }
+  if (current < 4) {
+    // Strava 匯入：strava_id 防止重複匯入；刪除匯入的活動只隱藏，下次同步才不會又跑回來
+    await db.execAsync(`
+      ALTER TABLE exercises ADD COLUMN strava_id INTEGER;
+      ALTER TABLE exercises ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+      CREATE UNIQUE INDEX exercises_strava ON exercises(strava_id);
+    `);
   }
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
 }
@@ -279,15 +287,38 @@ export function sumItems(items: FoodItem[]): Totals {
 }
 
 export async function getExercises(db: SQLiteDatabase, date: string) {
-  return db.getAllAsync<Exercise>('SELECT * FROM exercises WHERE date = ? ORDER BY id', date);
+  return db.getAllAsync<Exercise>('SELECT * FROM exercises WHERE date = ? AND hidden = 0 ORDER BY id', date);
 }
 
 export async function addExercise(db: SQLiteDatabase, date: string, name: string, kcal: number) {
   await db.runAsync('INSERT INTO exercises (date, name, kcal) VALUES (?, ?, ?)', date, name, kcal);
 }
 
+/** 手動新增的直接刪；Strava 匯入的只隱藏 */
 export async function deleteExercise(db: SQLiteDatabase, id: number) {
-  await db.runAsync('DELETE FROM exercises WHERE id = ?', id);
+  await db.runAsync('UPDATE exercises SET hidden = 1 WHERE id = ? AND strava_id IS NOT NULL', id);
+  await db.runAsync('DELETE FROM exercises WHERE id = ? AND strava_id IS NULL', id);
+}
+
+/** 已匯入過（含已隱藏）的 Strava 活動 id */
+export async function getStravaIds(db: SQLiteDatabase) {
+  const rows = await db.getAllAsync<{ strava_id: number }>(
+    'SELECT strava_id FROM exercises WHERE strava_id IS NOT NULL',
+  );
+  return new Set(rows.map((r) => r.strava_id));
+}
+
+export async function importStravaExercise(
+  db: SQLiteDatabase,
+  a: { stravaId: number; date: string; name: string; kcal: number },
+) {
+  await db.runAsync(
+    'INSERT OR IGNORE INTO exercises (date, name, kcal, strava_id) VALUES (?, ?, ?, ?)',
+    a.date,
+    a.name,
+    a.kcal,
+    a.stravaId,
+  );
 }
 
 export async function getWeight(db: SQLiteDatabase, date: string) {
@@ -310,14 +341,14 @@ export async function getWeights(db: SQLiteDatabase, sinceDate: string) {
 export async function getDaySummaries(db: SQLiteDatabase, limit = 60): Promise<DaySummary[]> {
   return db.getAllAsync<DaySummary>(
     `WITH days AS (
-       SELECT date FROM meals UNION SELECT date FROM exercises UNION SELECT date FROM weights
+       SELECT date FROM meals UNION SELECT date FROM exercises WHERE hidden = 0 UNION SELECT date FROM weights
      )
      SELECT d.date,
        COALESCE((SELECT SUM(f.kcal) FROM food_items f JOIN meals m ON m.id = f.meal_id WHERE m.date = d.date), 0) AS kcal,
        COALESCE((SELECT SUM(f.protein) FROM food_items f JOIN meals m ON m.id = f.meal_id WHERE m.date = d.date), 0) AS protein,
        COALESCE((SELECT SUM(f.fat) FROM food_items f JOIN meals m ON m.id = f.meal_id WHERE m.date = d.date), 0) AS fat,
        COALESCE((SELECT SUM(f.carbs) FROM food_items f JOIN meals m ON m.id = f.meal_id WHERE m.date = d.date), 0) AS carbs,
-       COALESCE((SELECT SUM(kcal) FROM exercises e WHERE e.date = d.date), 0) AS exercise_kcal,
+       COALESCE((SELECT SUM(kcal) FROM exercises e WHERE e.date = d.date AND e.hidden = 0), 0) AS exercise_kcal,
        (SELECT kg FROM weights w WHERE w.date = d.date) AS weight,
        COALESCE((SELECT SUM(price) FROM meals m WHERE m.date = d.date), 0) AS spent,
        (SELECT COUNT(*) FROM meals m WHERE m.date = d.date) AS meal_count,

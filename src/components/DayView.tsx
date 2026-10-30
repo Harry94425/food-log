@@ -1,7 +1,8 @@
+import { Picker } from '@react-native-picker/picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
 import {
   addExercise,
   deleteExercise,
@@ -16,9 +17,12 @@ import {
   setWeight,
   sumItems,
 } from '@/lib/db';
+import { EXERCISE_PRESETS, isIncludedInGoal } from '@/lib/exercise';
 import { deletePhoto } from '@/lib/photo';
+import { autoSyncStrava } from '@/lib/stravaSync';
 import { getSettings, goalsForDay } from '@/lib/settings';
 import type { Totals } from '@/lib/db';
+import { KeyboardScrollView } from './KeyboardScrollView';
 import { ProgressBar } from './ProgressBar';
 import { colors, ui } from './theme';
 
@@ -28,8 +32,14 @@ export function DayView({ date }: { date: string }) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [baseGoals, setBaseGoals] = useState<Totals | null>(null);
   const [weight, setWeightState] = useState('');
-  const [exName, setExName] = useState('公路車');
-  const [exKcal, setExKcal] = useState('');
+  const [exName, setExName] = useState(EXERCISE_PRESETS[0].name);
+  const [exKcal, setExKcal] = useState(String(EXERCISE_PRESETS[0].kcal ?? ''));
+
+  const onPickExercise = (name: string) => {
+    setExName(name);
+    const preset = EXERCISE_PRESETS.find((p) => p.name === name);
+    setExKcal(preset?.kcal != null ? String(preset.kcal) : '');
+  };
 
   const load = useCallback(async () => {
     const [m, e, s, w] = await Promise.all([
@@ -47,7 +57,11 @@ export function DayView({ date }: { date: string }) {
   useFocusEffect(
     useCallback(() => {
       load();
-    }, [load]),
+      // 有連 Strava 就順便抓新活動，抓到才重新整理
+      autoSyncStrava(db).then((added) => {
+        if (added > 0) load();
+      });
+    }, [db, load]),
   );
 
   const totals = sumItems(meals.flatMap((m) => m.items));
@@ -55,11 +69,13 @@ export function DayView({ date }: { date: string }) {
   const spent = meals.reduce((s, m) => s + (m.price ?? 0), 0);
   const goals = baseGoals ? goalsForDay(baseGoals, exerciseKcal) : null;
 
+  const exIncluded = isIncludedInGoal(exName);
+
   const onAddExercise = async () => {
-    const kcal = Number(exKcal);
-    if (!exName.trim() || !(kcal > 0)) return;
+    const kcal = exIncluded ? 0 : Number(exKcal);
+    if (!exName.trim() || !(exIncluded || kcal > 0)) return;
     await addExercise(db, date, exName.trim(), kcal);
-    setExKcal('');
+    onPickExercise(exName);
     load();
   };
 
@@ -84,7 +100,7 @@ export function DayView({ date }: { date: string }) {
   };
 
   return (
-    <ScrollView style={ui.screen} contentContainerStyle={ui.content}>
+    <KeyboardScrollView style={ui.screen} contentContainerStyle={ui.content}>
       {goals && (
         <View style={ui.card}>
           <ProgressBar label="熱量" value={totals.kcal} goal={goals.kcal} unit="kcal" color={colors.primary} />
@@ -126,13 +142,17 @@ export function DayView({ date }: { date: string }) {
               <View style={{ flex: 1, gap: 2 }}>
                 {meal.items.map((i) => (
                   <Text key={i.id} style={ui.text}>
-                    {i.name} <Text style={ui.muted}>{i.portion} · {Math.round(i.kcal)} kcal · 蛋白 {i.protein}g</Text>
+                    {i.name}{' '}
+                    <Text style={ui.muted}>
+                      {i.portion} · {Math.round(i.kcal)} kcal · 蛋白 {i.protein}g
+                    </Text>
                   </Text>
                 ))}
               </View>
             </View>
             <Text style={ui.muted}>
-              蛋白 {Math.round(t.protein)}g · 碳水 {Math.round(t.carbs)}g · 脂肪 {Math.round(t.fat)}g（點一下編輯，長按刪除）
+              蛋白 {Math.round(t.protein)}g · 碳水 {Math.round(t.carbs)}g · 脂肪 {Math.round(t.fat)}
+              g（點一下編輯，長按刪除）
             </Text>
           </Pressable>
         );
@@ -149,19 +169,33 @@ export function DayView({ date }: { date: string }) {
             }}
           >
             <Text style={ui.text}>
-              {e.name} <Text style={ui.muted}>{e.kcal} kcal（長按刪除）</Text>
+              {e.name}{' '}
+              <Text style={ui.muted}>
+                {isIncludedInGoal(e.name) ? '已含在每日目標' : `${e.kcal} kcal`}
+                {e.strava_id ? ' · Strava' : ''}（長按刪除）
+              </Text>
             </Text>
           </Pressable>
         ))}
+        <View style={[ui.input, { paddingVertical: 0, paddingHorizontal: 0 }]}>
+          <Picker selectedValue={exName} onValueChange={onPickExercise} mode="dropdown">
+            {EXERCISE_PRESETS.map((p) => (
+              <Picker.Item key={p.name} label={p.name} value={p.name} />
+            ))}
+          </Picker>
+        </View>
         <View style={ui.row}>
-          <TextInput style={[ui.input, { flex: 1 }]} value={exName} onChangeText={setExName} placeholder="項目" />
-          <TextInput
-            style={[ui.input, { width: 90 }]}
-            value={exKcal}
-            onChangeText={setExKcal}
-            placeholder="kcal"
-            keyboardType="numeric"
-          />
+          {exIncluded ? (
+            <Text style={[ui.muted, { flex: 1 }]}>消耗已含在每日目標，不另外加熱量</Text>
+          ) : (
+            <TextInput
+              style={[ui.input, { flex: 1 }]}
+              value={exKcal}
+              onChangeText={setExKcal}
+              placeholder={exName === '公路車' ? '消耗 kcal（看碼表或 Strava）' : '消耗 kcal'}
+              keyboardType="numeric"
+            />
+          )}
           <Pressable style={[ui.button, { paddingVertical: 9 }]} onPress={onAddExercise}>
             <Text style={ui.buttonText}>加入</Text>
           </Pressable>
@@ -182,6 +216,6 @@ export function DayView({ date }: { date: string }) {
           <Text style={ui.text}>kg</Text>
         </View>
       </View>
-    </ScrollView>
+    </KeyboardScrollView>
   );
 }

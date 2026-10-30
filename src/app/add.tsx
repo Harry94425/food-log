@@ -2,8 +2,9 @@ import { File } from 'expo-file-system';
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
 import { DateField } from '@/components/DateField';
+import { KeyboardScrollView } from '@/components/KeyboardScrollView';
 import { colors, ui } from '@/components/theme';
 import {
   getMeal,
@@ -220,7 +221,7 @@ export default function MealEditorScreen() {
   if (!loaded) return <ActivityIndicator style={{ marginTop: 40 }} size="large" color={colors.primary} />;
 
   return (
-    <ScrollView style={ui.screen} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
+    <KeyboardScrollView style={ui.screen} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
       <Stack.Screen options={{ title: editId != null ? '編輯餐點' : '新增餐點' }} />
 
       <View style={[ui.row, { flexWrap: 'wrap' }]}>
@@ -375,6 +376,6 @@ export default function MealEditorScreen() {
       <Pressable style={[ui.button, busy && { opacity: 0.5 }]} onPress={save} disabled={busy}>
         <Text style={ui.buttonText}>{editId != null ? '儲存修改' : '儲存'}</Text>
       </Pressable>
-    </ScrollView>
+    </KeyboardScrollView>
   );
 }
