@@ -57,6 +57,7 @@ export default function AddMealScreen() {
   const [items, setItems] = useState<DraftItem[]>([]);
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
 
   const choose = async (source: 'camera' | 'library') => {
     try {
@@ -73,15 +74,22 @@ export default function AddMealScreen() {
   const recognize = async (p = photo) => {
     if (!p) return;
     setBusy(true);
+    setStatus('辨識中…');
     try {
       const recognizer = await getRecognizer(db);
-      const r = await recognizer.recognize({ imageBase64: p.base64, mimeType: p.mimeType, hint: hint.trim() });
+      const r = await recognizer.recognize({
+        imageBase64: p.base64,
+        mimeType: p.mimeType,
+        hint: hint.trim(),
+        onStatus: setStatus,
+      });
       setItems(r.items.map(toDraft));
       setNote(r.note);
     } catch (e) {
       Alert.alert('辨識失敗', (e as Error).message);
     } finally {
       setBusy(false);
+      setStatus('');
     }
   };
 
@@ -148,7 +156,12 @@ export default function AddMealScreen() {
         </Pressable>
       )}
 
-      {busy && <ActivityIndicator size="large" color={colors.primary} />}
+      {busy && (
+        <View style={{ alignItems: 'center', gap: 4 }}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          {status ? <Text style={ui.muted}>{status}</Text> : null}
+        </View>
+      )}
 
       {note ? <Text style={[ui.muted, { color: colors.fat }]}>⚠️ {note}</Text> : null}
 

@@ -2,24 +2,39 @@ import * as SecureStore from 'expo-secure-store';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import type { Totals } from './db';
 import { GeminiRecognizer } from './recognizer/gemini';
+import { OpenAIRecognizer } from './recognizer/openai';
 import { FoodRecognizer, RecognizerError } from './recognizer/types';
 
-const API_KEY = 'gemini_api_key';
+export type Provider = 'gemini' | 'openai';
 
-export const DEFAULT_MODEL = 'gemini-3.8-flash';
+export const PROVIDERS: Record<Provider, { label: string; keyUrl: string; defaultModel: string; keyStore: string }> = {
+  gemini: {
+    label: 'Gemini（免費）',
+    keyUrl: 'aistudio.google.com',
+    defaultModel: 'gemini-3.8-flash',
+    keyStore: 'gemini_api_key',
+  },
+  openai: {
+    label: 'GPT（付費）',
+    keyUrl: 'platform.openai.com',
+    defaultModel: 'gpt-6-luna',
+    keyStore: 'openai_api_key',
+  },
+};
 
 /** 預設的每日目標；每個人要在設定頁改成自己的 */
 export const DEFAULT_GOALS: Totals = { kcal: 2350, protein: 90, fat: 65, carbs: 330 };
 
-export type Settings = { model: string; goals: Totals };
+export type Settings = { provider: Provider; models: Record<Provider, string>; goals: Totals };
 
-export async function getApiKey() {
-  return SecureStore.getItemAsync(API_KEY);
+export async function getApiKey(provider: Provider) {
+  return SecureStore.getItemAsync(PROVIDERS[provider].keyStore);
 }
 
-export async function setApiKey(value: string) {
-  if (value) await SecureStore.setItemAsync(API_KEY, value);
-  else await SecureStore.deleteItemAsync(API_KEY);
+export async function setApiKey(provider: Provider, value: string) {
+  const key = PROVIDERS[provider].keyStore;
+  if (value) await SecureStore.setItemAsync(key, value);
+  else await SecureStore.deleteItemAsync(key);
 }
 
 export async function getSettings(db: SQLiteDatabase): Promise<Settings> {
@@ -27,14 +42,21 @@ export async function getSettings(db: SQLiteDatabase): Promise<Settings> {
   const map = Object.fromEntries(rows.map((r) => [r.key, r.value]));
   const n = (k: keyof Totals) => (map[`goal_${k}`] ? Number(map[`goal_${k}`]) : DEFAULT_GOALS[k]);
   return {
-    model: map.model || DEFAULT_MODEL,
+    provider: map.provider === 'openai' ? 'openai' : 'gemini',
+    models: {
+      // 舊版只存 `model`（Gemini）
+      gemini: map.model || PROVIDERS.gemini.defaultModel,
+      openai: map.openai_model || PROVIDERS.openai.defaultModel,
+    },
     goals: { kcal: n('kcal'), protein: n('protein'), fat: n('fat'), carbs: n('carbs') },
   };
 }
 
 export async function saveSettings(db: SQLiteDatabase, s: Settings) {
   const entries: [string, string][] = [
-    ['model', s.model],
+    ['provider', s.provider],
+    ['model', s.models.gemini],
+    ['openai_model', s.models.openai],
     ...(Object.keys(s.goals) as (keyof Totals)[]).map((k): [string, string] => [`goal_${k}`, String(s.goals[k])]),
   ];
   await db.withTransactionAsync(async () => {
@@ -56,8 +78,8 @@ export function goalsForDay(base: Totals, exerciseKcal: number): Totals {
 }
 
 export async function getRecognizer(db: SQLiteDatabase): Promise<FoodRecognizer> {
-  const key = await getApiKey();
-  if (!key) throw new RecognizerError('請先到「設定」輸入 Gemini API 金鑰。');
-  const { model } = await getSettings(db);
-  return new GeminiRecognizer(key, model);
+  const { provider, models } = await getSettings(db);
+  const key = await getApiKey(provider);
+  if (!key) throw new RecognizerError(`請先到「設定」輸入 ${PROVIDERS[provider].label} 的 API 金鑰。`);
+  return provider === 'openai' ? new OpenAIRecognizer(key, models.openai) : new GeminiRecognizer(key, models.gemini);
 }

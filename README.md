@@ -9,7 +9,7 @@ npm install
 npx expo start
 ```
 
-手機安裝 Expo Go，掃終端機上的 QR code。第一次打開到「設定」貼上 Gemini API 金鑰（https://aistudio.google.com）。
+手機安裝 Expo Go，掃終端機上的 QR code。第一次打開到「設定」選 AI 供應商並貼上金鑰：Gemini（免費，https://aistudio.google.com）或 GPT（付費，https://platform.openai.com）。
 
 ## 打包 APK
 

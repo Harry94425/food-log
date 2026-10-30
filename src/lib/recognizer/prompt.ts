@@ -9,25 +9,38 @@ export const FOOD_PROMPT = `你是營養師。辨識照片中的所有食物與�
 - note 用一句話說明最不確定的地方；沒有就留空字串。
 - 照片裡沒有食物時，items 回傳空陣列，並在 note 說明。`;
 
+export function buildPrompt(hint?: string) {
+  return hint ? `${FOOD_PROMPT}\n\n使用者補充：${hint}` : FOOD_PROMPT;
+}
+
+const ITEM_SCHEMA = {
+  type: 'object',
+  properties: {
+    name: { type: 'string' },
+    portion: { type: 'string' },
+    kcal: { type: 'number' },
+    protein: { type: 'number' },
+    fat: { type: 'number' },
+    carbs: { type: 'number' },
+  },
+  required: ['name', 'portion', 'kcal', 'protein', 'fat', 'carbs'],
+} as const;
+
 export const RECOGNITION_SCHEMA = {
   type: 'object',
   properties: {
-    items: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          portion: { type: 'string' },
-          kcal: { type: 'number' },
-          protein: { type: 'number' },
-          fat: { type: 'number' },
-          carbs: { type: 'number' },
-        },
-        required: ['name', 'portion', 'kcal', 'protein', 'fat', 'carbs'],
-      },
-    },
+    items: { type: 'array', items: ITEM_SCHEMA },
     note: { type: 'string' },
   },
   required: ['items', 'note'],
+} as const;
+
+/** OpenAI strict 模式要求每個物件都標 additionalProperties: false */
+export const RECOGNITION_SCHEMA_STRICT = {
+  ...RECOGNITION_SCHEMA,
+  additionalProperties: false,
+  properties: {
+    ...RECOGNITION_SCHEMA.properties,
+    items: { type: 'array', items: { ...ITEM_SCHEMA, additionalProperties: false } },
+  },
 } as const;
