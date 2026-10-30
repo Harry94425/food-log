@@ -391,6 +391,19 @@ export async function setWeight(db: SQLiteDatabase, date: string, kg: number) {
   await db.runAsync('INSERT OR REPLACE INTO weights (date, kg) VALUES (?, ?)', date, kg);
 }
 
+/** 這天以前（含）最近一次量的體重，選體重時當預設值 */
+export async function getLatestWeight(db: SQLiteDatabase, onOrBefore: string) {
+  const row = await db.getFirstAsync<{ kg: number }>(
+    'SELECT kg FROM weights WHERE date <= ? ORDER BY date DESC LIMIT 1',
+    onOrBefore,
+  );
+  return row?.kg ?? null;
+}
+
+export async function deleteWeight(db: SQLiteDatabase, date: string) {
+  await db.runAsync('DELETE FROM weights WHERE date = ?', date);
+}
+
 export async function getWeights(db: SQLiteDatabase, sinceDate: string) {
   return db.getAllAsync<{ date: string; kg: number }>(
     'SELECT date, kg FROM weights WHERE date >= ? ORDER BY date',

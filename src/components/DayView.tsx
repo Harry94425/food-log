@@ -1,18 +1,16 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Pressable, Text, View } from 'react-native';
 import {
   deleteExercise,
   deleteMeal,
   Exercise,
   getExercises,
   getMeals,
-  getWeight,
   Meal,
   MEAL_LABELS,
   mealTitle,
-  setWeight,
   sumItems,
 } from '@/lib/db';
 import { isIncludedInGoal } from '@/lib/exercise';
@@ -22,6 +20,7 @@ import { getSettings, goalsForDay } from '@/lib/settings';
 import type { Totals } from '@/lib/db';
 import { KeyboardScrollView } from './KeyboardScrollView';
 import { ProgressBar } from './ProgressBar';
+import { WeightCard } from './WeightCard';
 import { colors, ui } from './theme';
 
 export function DayView({ date }: { date: string }) {
@@ -29,19 +28,12 @@ export function DayView({ date }: { date: string }) {
   const [meals, setMeals] = useState<Meal[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [baseGoals, setBaseGoals] = useState<Totals | null>(null);
-  const [weight, setWeightState] = useState('');
 
   const load = useCallback(async () => {
-    const [m, e, s, w] = await Promise.all([
-      getMeals(db, date),
-      getExercises(db, date),
-      getSettings(db),
-      getWeight(db, date),
-    ]);
+    const [m, e, s] = await Promise.all([getMeals(db, date), getExercises(db, date), getSettings(db)]);
     setMeals(m);
     setExercises(e);
     setBaseGoals(s.goals);
-    setWeightState(w != null ? String(w) : '');
   }, [db, date]);
 
   useFocusEffect(
@@ -58,11 +50,6 @@ export function DayView({ date }: { date: string }) {
   const exerciseKcal = exercises.reduce((s, e) => s + e.kcal, 0);
   const spent = meals.reduce((s, m) => s + (m.price ?? 0), 0);
   const goals = baseGoals ? goalsForDay(baseGoals, exerciseKcal) : null;
-
-  const onSaveWeight = async () => {
-    const kg = Number(weight);
-    if (kg > 20 && kg < 300) await setWeight(db, date, kg);
-  };
 
   const onDeleteMeal = (meal: Meal) => {
     Alert.alert('刪除這一餐？', mealTitle(meal), [
@@ -185,20 +172,7 @@ export function DayView({ date }: { date: string }) {
         )}
       </View>
 
-      <View style={ui.card}>
-        <Text style={ui.title}>體重</Text>
-        <View style={ui.row}>
-          <TextInput
-            style={[ui.input, { flex: 1 }]}
-            value={weight}
-            onChangeText={setWeightState}
-            onEndEditing={onSaveWeight}
-            placeholder="例如 48.2"
-            keyboardType="decimal-pad"
-          />
-          <Text style={ui.text}>kg</Text>
-        </View>
-      </View>
+      <WeightCard date={date} />
     </KeyboardScrollView>
   );
 }
