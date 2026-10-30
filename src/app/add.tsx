@@ -87,12 +87,18 @@ export default function MealEditorScreen() {
     })();
   }, [db, editId]);
 
-  // 新增時列出吃過的餐點，可直接帶入省掉辨識
+  // 新增時可搜尋吃過的餐點直接帶入，省掉辨識；沒輸入就不列
   const showPast = editId == null && items.length === 0;
+  const searching = pastQuery.trim() !== '';
   useEffect(() => {
-    if (!showPast) return;
-    searchPastMeals(db, pastQuery).then(setPastMeals);
-  }, [db, pastQuery, showPast]);
+    if (!showPast || !searching) return;
+    let alive = true;
+    searchPastMeals(db, pastQuery, 5).then((r) => alive && setPastMeals(r));
+    return () => {
+      alive = false;
+    };
+  }, [db, pastQuery, showPast, searching]);
+  const pastResults = searching ? pastMeals : [];
 
   const applyPast = async (id: number) => {
     const meal = await getMeal(db, id);
@@ -277,8 +283,8 @@ export default function MealEditorScreen() {
             onPress={() => setMealType(t)}
             style={[
               mealType === t ? ui.button : ui.buttonOutline,
-              // 一排三個
-              { flexBasis: '30%', flexGrow: 1, paddingHorizontal: 0, paddingVertical: 8 },
+              // 一排四個
+              { flexBasis: '22%', flexGrow: 1, paddingHorizontal: 0, paddingVertical: 8 },
             ]}
           >
             <Text style={mealType === t ? ui.buttonText : ui.buttonOutlineText}>{MEAL_LABELS[t]}</Text>
@@ -292,18 +298,15 @@ export default function MealEditorScreen() {
 
       {showPast && (
         <View style={ui.card}>
-          <Text style={ui.title}>吃過一樣的？直接帶入</Text>
           <TextInput
             style={ui.input}
             value={pastQuery}
             onChangeText={setPastQuery}
-            placeholder="搜尋店家或餐點名稱"
+            placeholder="🔍 吃過的？搜尋店家或餐點名稱直接帶入"
             autoCorrect={false}
           />
-          {pastMeals.length === 0 && (
-            <Text style={ui.muted}>{pastQuery ? '找不到符合的紀錄。' : '還沒有紀錄，存過的餐點會出現在這裡。'}</Text>
-          )}
-          {pastMeals.map((m) => (
+          {searching && pastResults.length === 0 && <Text style={ui.muted}>找不到符合的紀錄。</Text>}
+          {pastResults.map((m) => (
             <Pressable
               key={m.id}
               onPress={() => applyPast(m.id)}

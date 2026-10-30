@@ -4,7 +4,7 @@ import type { FoodItem } from './recognizer/types';
 export const DB_NAME = 'foodlog.db';
 const DATABASE_VERSION = 6;
 
-export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'late_night' | 'snack' | 'drink';
+export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'late_night' | 'snack' | 'drink' | 'ride_fuel';
 
 export const MEAL_LABELS: Record<MealType, string> = {
   breakfast: '早餐',
@@ -13,6 +13,8 @@ export const MEAL_LABELS: Record<MealType, string> = {
   late_night: '宵夜',
   snack: '點心',
   drink: '飲料',
+  // 騎車時吃的能量膠、運動飲料等，分開記才看得出補給吃多少
+  ride_fuel: '補給',
 };
 
 export type Meal = {
