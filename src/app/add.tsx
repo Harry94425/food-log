@@ -25,6 +25,7 @@ function defaultMealType(): MealType {
   if (h < 10) return 'breakfast';
   if (h < 15) return 'lunch';
   if (h >= 17 && h < 21) return 'dinner';
+  if (h >= 21 || h < 4) return 'late_night';
   return 'snack';
 }
 
@@ -189,14 +190,15 @@ export default function MealEditorScreen() {
     <ScrollView style={ui.screen} contentContainerStyle={ui.content} keyboardShouldPersistTaps="handled">
       <Stack.Screen options={{ title: editId != null ? '編輯餐點' : '新增餐點' }} />
 
-      <View style={ui.row}>
+      <View style={[ui.row, { flexWrap: 'wrap' }]}>
         {(Object.keys(MEAL_LABELS) as MealType[]).map((t) => (
           <Pressable
             key={t}
             onPress={() => setMealType(t)}
             style={[
               mealType === t ? ui.button : ui.buttonOutline,
-              { flex: 1, paddingHorizontal: 0, paddingVertical: 8 },
+              // 一排三個
+              { flexBasis: '30%', flexGrow: 1, paddingHorizontal: 0, paddingVertical: 8 },
             ]}
           >
             <Text style={mealType === t ? ui.buttonText : ui.buttonOutlineText}>{MEAL_LABELS[t]}</Text>
@@ -214,6 +216,12 @@ export default function MealEditorScreen() {
         />
       </View>
 
+      <TextInput
+        style={ui.input}
+        value={hint}
+        onChangeText={setHint}
+        placeholder="給 AI 的補充說明（選填），例如：飯只吃一半、無糖、大份"
+      />
       <View style={ui.row}>
         <Pressable style={[ui.button, { flex: 1 }]} onPress={() => choose('camera')} disabled={busy}>
           <Text style={ui.buttonText}>📷 {photoUri ? '重拍' : '拍照'}</Text>
@@ -225,15 +233,9 @@ export default function MealEditorScreen() {
 
       {photoUri && <Image source={{ uri: photoUri }} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 12 }} />}
 
-      <TextInput
-        style={ui.input}
-        value={hint}
-        onChangeText={setHint}
-        placeholder="補充說明（選填），例如：飯只吃一半、無糖"
-      />
       {photoUri && (
         <Pressable style={ui.buttonOutline} onPress={() => recognize()} disabled={busy}>
-          <Text style={ui.buttonOutlineText}>重新辨識</Text>
+          <Text style={ui.buttonOutlineText}>重新辨識（會套用上面的補充說明）</Text>
         </Pressable>
       )}
 

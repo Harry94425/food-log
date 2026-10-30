@@ -4,13 +4,15 @@ import type { FoodItem } from './recognizer/types';
 export const DB_NAME = 'foodlog.db';
 const DATABASE_VERSION = 2;
 
-export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'late_night' | 'snack' | 'drink';
 
 export const MEAL_LABELS: Record<MealType, string> = {
   breakfast: '早餐',
   lunch: '午餐',
   dinner: '晚餐',
+  late_night: '宵夜',
   snack: '點心',
+  drink: '飲料',
 };
 
 export type Meal = {
