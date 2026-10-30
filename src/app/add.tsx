@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
 import { DateField } from '@/components/DateField';
 import { KeyboardScrollView } from '@/components/KeyboardScrollView';
+import { BarcodeScanner } from '@/components/BarcodeScanner';
+import { LabelCard } from '@/components/LabelCard';
 import { colors, ui } from '@/components/theme';
 import {
   getMeal,
@@ -18,7 +20,9 @@ import {
   updateMeal,
 } from '@/lib/db';
 import { deletePhoto, persistPhoto, pickPhoto, PickedPhoto } from '@/lib/photo';
-import type { FoodItem } from '@/lib/recognizer/types';
+import { getSavedProduct, lookupOpenFoodFacts, saveProduct } from '@/lib/products';
+import { LABEL_TASK, MEAL_TASK } from '@/lib/recognizer/tasks';
+import type { FoodItem, LabelRecognition } from '@/lib/recognizer/types';
 import { getRecognizer } from '@/lib/settings';
 
 type NumField = 'kcal' | 'protein' | 'fat' | 'carbs';
@@ -82,6 +86,9 @@ export default function MealEditorScreen() {
   const [savedPhotoUri, setSavedPhotoUri] = useState<string | null>(null);
   /** 這次新拍或新選的照片 */
   const [photo, setPhoto] = useState<PickedPhoto | null>(null);
+  /** 掃完營養標示、還沒決定吃幾份 */
+  const [label, setLabel] = useState<LabelRecognition | null>(null);
+  const [scanning, setScanning] = useState(false);
   const [hint, setHint] = useState('');
   const [items, setItems] = useState<DraftItem[]>([]);
   const [note, setNote] = useState('');
@@ -158,7 +165,7 @@ export default function MealEditorScreen() {
     setStatus('辨識中…');
     try {
       const recognizer = await getRecognizer(db);
-      const r = await recognizer.recognize({
+      const r = await recognizer.run(MEAL_TASK, {
         imageBase64: input.base64,
         mimeType: input.mimeType,
         hint: hint.trim(),
@@ -173,6 +180,73 @@ export default function MealEditorScreen() {
       setBusy(false);
       setStatus('');
     }
+  };
+
+  /** 條碼查不到時，拍一次營養標示讓 AI 讀並記在條碼底下；照片只用來讀數字，不存成這餐的照片 */
+  const askLabelForBarcode = (barcode: string) =>
+    Alert.alert(
+      `查不到這個條碼（${barcode}）`,
+      '拍一次包裝背面的「營養標示」，AI 讀完會記住，下次掃這個條碼就直接帶入。',
+      [
+        { text: '取消', style: 'cancel' },
+        { text: '從相簿選', onPress: () => readLabel('library', barcode) },
+        { text: '拍照', onPress: () => readLabel('camera', barcode) },
+      ],
+    );
+
+  /** 條碼 → 自己記過的 → Open Food Facts → 都沒有就請 AI 讀標示並記住 */
+  const onBarcode = async (barcode: string) => {
+    setScanning(false);
+    setBusy(true);
+    setStatus('查詢商品中…');
+    try {
+      const saved = await getSavedProduct(db, barcode);
+      if (saved) {
+        setLabel(saved);
+        return;
+      }
+      const found = await lookupOpenFoodFacts(barcode);
+      if (found) {
+        await saveProduct(db, found);
+        setLabel(found);
+        return;
+      }
+      askLabelForBarcode(barcode);
+    } finally {
+      setBusy(false);
+      setStatus('');
+    }
+  };
+
+  const readLabel = async (source: 'camera' | 'library', barcode: string) => {
+    let p: PickedPhoto | null;
+    try {
+      p = await pickPhoto(source);
+    } catch (e) {
+      Alert.alert('無法取得照片', (e as Error).message);
+      return;
+    }
+    if (!p) return;
+    setBusy(true);
+    setStatus('讀取營養標示中…');
+    try {
+      const recognizer = await getRecognizer(db);
+      const r = await recognizer.run(LABEL_TASK, { imageBase64: p.base64, mimeType: p.mimeType, onStatus: setStatus });
+      if (r.perServing.kcal > 0) await saveProduct(db, { ...r, barcode, source: 'label' });
+      setLabel(r);
+    } catch (e) {
+      Alert.alert('讀取失敗', (e as Error).message);
+    } finally {
+      setBusy(false);
+      setStatus('');
+    }
+  };
+
+  const addLabelItem = (item: FoodItem) => {
+    setItems((prev) => [...prev, toDraft(item)]);
+    // 只有一項包裝食品時，直接用商品名當餐點名稱
+    if (!title.trim()) setTitle(item.name);
+    setLabel(null);
   };
 
   const update = (idx: number, patch: Partial<DraftItem>) =>
@@ -289,6 +363,10 @@ export default function MealEditorScreen() {
           <Text style={ui.buttonOutlineText}>🖼 選照片</Text>
         </Pressable>
       </View>
+      <Pressable style={ui.buttonOutline} onPress={() => setScanning(true)} disabled={busy}>
+        <Text style={ui.buttonOutlineText}>▦ 掃包裝條碼</Text>
+      </Pressable>
+      <BarcodeScanner visible={scanning} onScanned={onBarcode} onClose={() => setScanning(false)} />
 
       {photoUri && <Image source={{ uri: photoUri }} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 12 }} />}
 
@@ -306,6 +384,8 @@ export default function MealEditorScreen() {
       )}
 
       {note ? <Text style={[ui.muted, { color: colors.fat }]}>⚠️ {note}</Text> : null}
+
+      {label && <LabelCard label={label} onAdd={addLabelItem} onCancel={() => setLabel(null)} />}
 
       <View style={ui.card}>
         <Text style={ui.muted}>餐點名稱</Text>

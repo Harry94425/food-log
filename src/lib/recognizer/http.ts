@@ -1,4 +1,4 @@
-import { Recognition, RecognizerError } from './types';
+import { RecognizerError } from './types';
 
 const TIMEOUT_MS = 45_000;
 
@@ -36,27 +36,4 @@ export function throwForStatus(provider: string, status: number, detail: string)
     throw new RecognizerError(`${provider} API 金鑰或模型設定有誤：${detail}`);
   }
   throw new RecognizerError(`${provider} 錯誤 (${status})：${detail}`);
-}
-
-export function parseRecognition(text: string): Recognition {
-  let raw: any;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    throw new RecognizerError('無法解析 AI 回傳的內容。');
-  }
-  const num = (v: unknown) => (typeof v === 'number' && isFinite(v) ? Math.max(0, Math.round(v * 10) / 10) : 0);
-  const items = Array.isArray(raw?.items) ? raw.items : [];
-  return {
-    title: String(raw?.title ?? ''),
-    items: items.map((i: any) => ({
-      name: String(i?.name ?? '未知食物'),
-      portion: String(i?.portion ?? ''),
-      kcal: Math.round(num(i?.kcal)),
-      protein: num(i?.protein),
-      fat: num(i?.fat),
-      carbs: num(i?.carbs),
-    })),
-    note: String(raw?.note ?? ''),
-  };
 }

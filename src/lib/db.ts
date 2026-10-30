@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import type { FoodItem } from './recognizer/types';
 
 export const DB_NAME = 'foodlog.db';
-const DATABASE_VERSION = 5;
+const DATABASE_VERSION = 6;
 
 export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'late_night' | 'snack' | 'drink';
 
@@ -142,6 +142,24 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
   if (current < 5) {
     // Strava 活動改成以 Strava 為準、不能在 App 刪除：之前隱藏的都放回來，hidden 欄位不再使用
     await db.execAsync(`UPDATE exercises SET hidden = 0;`);
+  }
+  if (current < 6) {
+    // 掃過的條碼商品（每份營養），下次掃同一個條碼直接帶入
+    await db.execAsync(`
+      CREATE TABLE products (
+        barcode TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        serving_size TEXT NOT NULL DEFAULT '',
+        serving_grams REAL,
+        servings_per_package REAL,
+        kcal REAL NOT NULL,
+        protein REAL NOT NULL,
+        fat REAL NOT NULL,
+        carbs REAL NOT NULL,
+        source TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
   }
   await db.execAsync(`PRAGMA user_version = ${DATABASE_VERSION}`);
 }

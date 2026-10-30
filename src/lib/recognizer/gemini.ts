@@ -1,6 +1,6 @@
-import { parseRecognition, postJson, sleep, throwForStatus, TransientError } from './http';
-import { buildPrompt, RECOGNITION_SCHEMA } from './prompt';
-import { FoodRecognizer, RecognizeInput, Recognition, RecognizerError } from './types';
+import { postJson, sleep, throwForStatus, TransientError } from './http';
+import type { RecognitionTask } from './tasks';
+import { FoodRecognizer, RecognizeInput, RecognizerError } from './types';
 
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/interactions';
 /** 每個模型最多試幾次（遇到 503 等暫時性錯誤才重試） */
@@ -20,7 +20,7 @@ export class GeminiRecognizer implements FoodRecognizer {
     private model: string,
   ) {}
 
-  async recognize(input: RecognizeInput): Promise<Recognition> {
+  async run<T>(task: RecognitionTask<T>, input: RecognizeInput): Promise<T> {
     const models = this.model === GEMINI_FALLBACK_MODEL ? [this.model] : [this.model, GEMINI_FALLBACK_MODEL];
     let lastError: Error | null = null;
 
@@ -30,7 +30,7 @@ export class GeminiRecognizer implements FoodRecognizer {
           input.onStatus?.(`伺服器忙碌，重試中（${model}）…`);
         }
         try {
-          return await this.request(model, input);
+          return task.parse(await this.request(model, task, input));
         } catch (e) {
           if (!(e instanceof TransientError)) throw e;
           lastError = e;
@@ -41,7 +41,11 @@ export class GeminiRecognizer implements FoodRecognizer {
     throw new RecognizerError(`Gemini 目前太忙，請過幾分鐘再試，或到設定改用 GPT。（${lastError?.message ?? ''}）`);
   }
 
-  private async request(model: string, { imageBase64, mimeType, hint }: RecognizeInput): Promise<Recognition> {
+  private async request(
+    model: string,
+    task: RecognitionTask<unknown>,
+    { imageBase64, mimeType, hint }: RecognizeInput,
+  ): Promise<string> {
     const { res, json } = await postJson(
       ENDPOINT,
       { 'x-goog-api-key': this.apiKey },
@@ -49,20 +53,23 @@ export class GeminiRecognizer implements FoodRecognizer {
         model,
         store: false,
         input: [
-          { type: 'text', text: buildPrompt(hint) },
+          { type: 'text', text: task.prompt(hint) },
           { type: 'image', data: imageBase64, mime_type: mimeType },
         ],
-        // 估熱量不需要深度推理，低思考量比較快
+        // 估熱量、抄標示都不需要深度推理，低思考量比較快
         generation_config: { thinking_level: 'low' },
-        response_format: { type: 'text', mime_type: 'application/json', schema: RECOGNITION_SCHEMA },
+        response_format: { type: 'text', mime_type: 'application/json', schema: task.schema },
       },
     );
     const body = json as InteractionResponse;
     if (!res.ok) throwForStatus('Gemini', res.status, body.error?.message ?? String(res.status));
 
     const output = body.steps?.filter((s) => s.type === 'model_output').pop();
-    const text = output?.content?.filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
+    const text = output?.content
+      ?.filter((c) => c.type === 'text')
+      .map((c) => c.text ?? '')
+      .join('');
     if (!text) throw new RecognizerError('Gemini 沒有回傳結果。');
-    return parseRecognition(text);
+    return text;
   }
 }

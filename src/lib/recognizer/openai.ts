@@ -1,6 +1,6 @@
-import { parseRecognition, postJson, sleep, throwForStatus, TransientError } from './http';
-import { buildPrompt, RECOGNITION_SCHEMA_STRICT } from './prompt';
-import { FoodRecognizer, RecognizeInput, Recognition, RecognizerError } from './types';
+import { postJson, sleep, throwForStatus, TransientError } from './http';
+import type { RecognitionTask } from './tasks';
+import { FoodRecognizer, RecognizeInput, RecognizerError } from './types';
 
 const ENDPOINT = 'https://api.openai.com/v1/responses';
 const ATTEMPTS = 2;
@@ -17,12 +17,12 @@ export class OpenAIRecognizer implements FoodRecognizer {
     private model: string,
   ) {}
 
-  async recognize(input: RecognizeInput): Promise<Recognition> {
+  async run<T>(task: RecognitionTask<T>, input: RecognizeInput): Promise<T> {
     let lastError: Error | null = null;
     for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
       if (attempt > 1) input.onStatus?.('伺服器忙碌，重試中…');
       try {
-        return await this.request(input);
+        return task.parse(await this.request(task, input));
       } catch (e) {
         if (!(e instanceof TransientError)) throw e;
         lastError = e;
@@ -32,7 +32,7 @@ export class OpenAIRecognizer implements FoodRecognizer {
     throw new RecognizerError(`OpenAI 目前無法使用，請稍後再試。（${lastError?.message ?? ''}）`);
   }
 
-  private async request({ imageBase64, mimeType, hint }: RecognizeInput): Promise<Recognition> {
+  private async request(task: RecognitionTask<unknown>, { imageBase64, mimeType, hint }: RecognizeInput) {
     const { res, json } = await postJson(
       ENDPOINT,
       { Authorization: `Bearer ${this.apiKey}` },
@@ -44,13 +44,13 @@ export class OpenAIRecognizer implements FoodRecognizer {
           {
             role: 'user',
             content: [
-              { type: 'input_text', text: buildPrompt(hint) },
+              { type: 'input_text', text: task.prompt(hint) },
               { type: 'input_image', image_url: `data:${mimeType};base64,${imageBase64}` },
             ],
           },
         ],
         text: {
-          format: { type: 'json_schema', name: 'food_recognition', strict: true, schema: RECOGNITION_SCHEMA_STRICT },
+          format: { type: 'json_schema', name: task.name, strict: true, schema: task.strictSchema },
         },
       },
     );
@@ -60,8 +60,11 @@ export class OpenAIRecognizer implements FoodRecognizer {
     const parts = body.output?.filter((o) => o.type === 'message').flatMap((o) => o.content ?? []) ?? [];
     const refusal = parts.find((p) => p.type === 'refusal')?.refusal;
     if (refusal) throw new RecognizerError(`OpenAI 拒絕回答：${refusal}`);
-    const text = parts.filter((p) => p.type === 'output_text').map((p) => p.text ?? '').join('');
+    const text = parts
+      .filter((p) => p.type === 'output_text')
+      .map((p) => p.text ?? '')
+      .join('');
     if (!text) throw new RecognizerError('OpenAI 沒有回傳結果。');
-    return parseRecognition(text);
+    return text;
   }
 }

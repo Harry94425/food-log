@@ -35,7 +35,14 @@
           "photosPermission": "從相簿選擇餐點照片"
         }
       ],
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "掃描包裝條碼與拍攝餐點",
+          "recordAudioAndroid": false
+        }
+      ]
     ],
     "scheme": "foodlog",
     "experiments": {
