@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import type { FoodItem, LabelRecognition } from '@/lib/recognizer/types';
-import { colors, ui } from './theme';
+import { Input } from './Input';
+import { useTheme } from './theme';
 
 type Props = {
   label: LabelRecognition;
@@ -13,6 +14,7 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 
 /** 掃完營養標示後，選吃了幾份再加入品項 */
 export function LabelCard({ label, onAdd, onCancel }: Props) {
+  const { colors, ui } = useTheme();
   const [servings, setServings] = useState('1');
   const n = Number(servings) || 0;
   const p = label.perServing;
@@ -61,12 +63,7 @@ export function LabelCard({ label, onAdd, onCancel }: Props) {
             <Text style={n === pr.value ? ui.buttonText : ui.buttonOutlineText}>{pr.text}</Text>
           </Pressable>
         ))}
-        <TextInput
-          style={[ui.input, { width: 70 }]}
-          value={servings}
-          onChangeText={setServings}
-          keyboardType="decimal-pad"
-        />
+        <Input style={[{ width: 70 }]} value={servings} onChangeText={setServings} keyboardType="decimal-pad" />
         <Text style={ui.text}>份</Text>
       </View>
       <Text style={ui.text}>

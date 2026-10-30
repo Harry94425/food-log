@@ -1,7 +1,7 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRef } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';
-import { ui } from './theme';
+import { useTheme } from './theme';
 
 type Props = {
   visible: boolean;
@@ -11,6 +11,7 @@ type Props = {
 
 /** 全螢幕相機掃商品條碼（EAN-13 / EAN-8 / UPC） */
 export function BarcodeScanner({ visible, onScanned, onClose }: Props) {
+  const { ui } = useTheme();
   const [permission, requestPermission] = useCameraPermissions();
   // 相機會連續回報同一個條碼，只處理第一次
   const done = useRef(false);

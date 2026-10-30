@@ -1,4 +1,5 @@
 import { Tabs } from 'expo-router';
+import { PlatformPressable } from 'expo-router/react-navigation';
 import { Text } from 'react-native';
 
 function TabIcon({ glyph }: { glyph: string }) {
@@ -7,8 +8,16 @@ function TabIcon({ glyph }: { glyph: string }) {
 
 export default function TabsLayout() {
   return (
-    // 打字時隱藏分頁列，避免被鍵盤頂上來擋住輸入框
-    <Tabs screenOptions={{ tabBarHideOnKeyboard: true }}>
+    <Tabs
+      screenOptions={{
+        // 打字時隱藏分頁列，避免被鍵盤頂上來擋住輸入框
+        tabBarHideOnKeyboard: true,
+        // 點分頁不要水波紋和變淡的效果
+        tabBarButton: (props) => (
+          <PlatformPressable {...props} android_ripple={{ color: 'transparent' }} pressOpacity={1} />
+        ),
+      }}
+    >
       <Tabs.Screen name="index" options={{ title: '今天', tabBarIcon: () => <TabIcon glyph="🍱" /> }} />
       <Tabs.Screen name="history" options={{ title: '歷史', tabBarIcon: () => <TabIcon glyph="📅" /> }} />
       <Tabs.Screen name="settings" options={{ title: '設定', tabBarIcon: () => <TabIcon glyph="⚙️" /> }} />

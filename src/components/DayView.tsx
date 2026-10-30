@@ -15,15 +15,17 @@ import {
 } from '@/lib/db';
 import { isIncludedInGoal } from '@/lib/exercise';
 import { deletePhoto } from '@/lib/photo';
+import { scheduleReminders } from '@/lib/reminders';
 import { autoSyncStrava } from '@/lib/stravaSync';
 import { getSettings, goalsForDay } from '@/lib/settings';
 import type { Totals } from '@/lib/db';
 import { KeyboardScrollView } from './KeyboardScrollView';
 import { ProgressBar } from './ProgressBar';
 import { WeightCard } from './WeightCard';
-import { colors, ui } from './theme';
+import { useTheme } from './theme';
 
 export function DayView({ date }: { date: string }) {
+  const { colors, ui } = useTheme();
   const db = useSQLiteContext();
   const [meals, setMeals] = useState<Meal[]>([]);
   const [exercises, setExercises] = useState<Exercise[]>([]);
@@ -60,6 +62,8 @@ export function DayView({ date }: { date: string }) {
         onPress: async () => {
           await deleteMeal(db, meal.id);
           deletePhoto(meal.photo_uri);
+          // 刪掉今天的午餐／晚餐要把提醒排回來
+          scheduleReminders(db).catch(() => {});
           load();
         },
       },

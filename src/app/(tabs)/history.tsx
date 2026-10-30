@@ -2,7 +2,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
-import { colors, ui } from '@/components/theme';
+import { useTheme } from '@/components/theme';
 import {
   DaySummary,
   emptyDay,
@@ -15,21 +15,27 @@ import {
 } from '@/lib/db';
 import { getSettings, goalsForDay } from '@/lib/settings';
 
-/** 列表固定顯示最近幾天（沒紀錄的也列出來） */
-const RECENT_DAYS = 30;
+/** 沒紀錄的日子也列出來：至少最近 MIN_DAYS 天，最多往回到 MAX_DAYS 天 */
+const MIN_DAYS = 7;
+const MAX_DAYS = 30;
 /** 今天過了這個時間還沒記，才標示缺午餐／晚餐 */
 const LUNCH_DEADLINE_HOUR = 14;
 const DINNER_DEADLINE_HOUR = 21;
 
 type MonthSpend = { label: string; total: number; days: number; meals: number };
 
-/** 最近 RECENT_DAYS 天每天一列，再接上更早有紀錄的日子 */
+/**
+ * 從今天往回每天一列，空白的日子也列：剛開始用只列一週，
+ * 之後往回到第一筆紀錄那天（最多 MAX_DAYS 天），再接上更早有紀錄的日子
+ */
 function fillDays(summaries: DaySummary[]): DaySummary[] {
   const byDate = new Map(summaries.map((s) => [s.date, s]));
+  const earliest = summaries.reduce((min, s) => (s.date < min ? s.date : min), toDateKey());
   const days: DaySummary[] = [];
   const d = new Date();
-  for (let i = 0; i < RECENT_DAYS; i++) {
+  for (let i = 0; i < MAX_DAYS; i++) {
     const key = toDateKey(d);
+    if (i >= MIN_DAYS && key < earliest) break;
     days.push(byDate.get(key) ?? emptyDay(key));
     byDate.delete(key);
     d.setDate(d.getDate() - 1);
@@ -85,6 +91,7 @@ function weeklyAverages(weights: { date: string; kg: number }[]): WeekAvg[] {
 }
 
 export default function HistoryScreen() {
+  const { colors, ui } = useTheme();
   const db = useSQLiteContext();
   const [days, setDays] = useState<DaySummary[]>([]);
   const [goals, setGoals] = useState<Totals | null>(null);
@@ -177,7 +184,7 @@ export default function HistoryScreen() {
               missing.length > 0 && {
                 borderColor: empty ? colors.danger : colors.fat,
                 borderWidth: 1,
-                backgroundColor: empty ? '#FEF2F2' : '#FFFBEB',
+                backgroundColor: empty ? colors.dangerBg : colors.warnBg,
               },
             ]}
             onPress={() => router.push({ pathname: '/day/[date]', params: { date: item.date } })}
@@ -198,7 +205,7 @@ export default function HistoryScreen() {
                   <Text
                     key={m}
                     style={{
-                      color: '#fff',
+                      color: colors.onPrimary,
                       backgroundColor: empty ? colors.danger : colors.fat,
                       borderRadius: 6,
                       paddingHorizontal: 6,

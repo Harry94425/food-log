@@ -1,12 +1,13 @@
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { Pressable, Text } from 'react-native';
 import { fromDateKey, toDateKey, weekdayLabel } from '@/lib/db';
-import { ui } from './theme';
+import { useTheme } from './theme';
 
 type Props = { value: string; onChange: (dateKey: string) => void };
 
 /** 點一下跳出 Android 日曆選日期，不能選未來 */
 export function DateField({ value, onChange }: Props) {
+  const { ui } = useTheme();
   const open = () =>
     DateTimePickerAndroid.open({
       value: fromDateKey(value),

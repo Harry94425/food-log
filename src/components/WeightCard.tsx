@@ -1,12 +1,14 @@
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useRef, useState } from 'react';
-import { Keyboard, Pressable, Text, TextInput, View } from 'react-native';
+import { Keyboard, Pressable, Text, View } from 'react-native';
 import { deleteWeight, getLatestWeight, getWeight, setWeight } from '@/lib/db';
-import { colors, ui } from './theme';
+import { Input } from './Input';
+import { useTheme } from './theme';
 
 /** 輸入體重：按儲存或收鍵盤就存，清空存檔等於刪除 */
 export function WeightCard({ date }: { date: string }) {
+  const { colors, ui } = useTheme();
   const db = useSQLiteContext();
   const [weight, setWeightText] = useState('');
   /** 資料庫裡的體重，用來判斷有沒有改、輸入不合理時還原 */
@@ -66,8 +68,8 @@ export function WeightCard({ date }: { date: string }) {
     <View style={ui.card}>
       <Text style={ui.title}>體重</Text>
       <View style={ui.row}>
-        <TextInput
-          style={[ui.input, { flex: 1 }]}
+        <Input
+          style={[{ flex: 1 }]}
           value={weight}
           onChangeText={setWeightText}
           onEndEditing={onSave}

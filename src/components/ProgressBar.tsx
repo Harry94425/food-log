@@ -1,9 +1,10 @@
 import { Text, View } from 'react-native';
-import { colors, ui } from './theme';
+import { useTheme } from './theme';
 
 type Props = { label: string; value: number; goal: number; unit: string; color: string };
 
 export function ProgressBar({ label, value, goal, unit, color }: Props) {
+  const { colors, ui } = useTheme();
   const ratio = goal > 0 ? Math.min(value / goal, 1) : 0;
   const left = Math.round(goal - value);
   return (

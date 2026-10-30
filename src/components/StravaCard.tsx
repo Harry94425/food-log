@@ -1,13 +1,15 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import { CALLBACK_DOMAIN, connectedAthlete, disconnect, getCredentials, saveCredentials } from '@/lib/strava';
 import { syncStrava } from '@/lib/stravaSync';
-import { colors, ui } from './theme';
+import { Input } from './Input';
+import { useTheme } from './theme';
 
 /** 設定頁的 Strava 連結區塊 */
 export function StravaCard() {
+  const { colors, ui } = useTheme();
   const db = useSQLiteContext();
   const [athlete, setAthlete] = useState<string | null>(null);
   const [clientId, setClientId] = useState('');
@@ -75,8 +77,8 @@ export function StravaCard() {
           <Pressable style={ui.buttonOutline} onPress={onSync} disabled={busy}>
             <Text style={ui.buttonOutlineText}>立即同步</Text>
           </Pressable>
-          <Pressable onPress={onDisconnect}>
-            <Text style={ui.muted}>中斷連結</Text>
+          <Pressable style={ui.smallDangerButton} onPress={onDisconnect}>
+            <Text style={ui.smallDangerButtonText}>中斷連結</Text>
           </Pressable>
         </>
       ) : (
@@ -89,15 +91,8 @@ export function StravaCard() {
             {CALLBACK_DOMAIN}
           </Text>
           <Text style={ui.muted}>3. 把頁面上的 Client ID 和 Client Secret 貼到下面，按「連結」</Text>
-          <TextInput
-            style={ui.input}
-            value={clientId}
-            onChangeText={setClientId}
-            placeholder="Client ID"
-            keyboardType="numeric"
-          />
-          <TextInput
-            style={ui.input}
+          <Input value={clientId} onChangeText={setClientId} placeholder="Client ID" keyboardType="numeric" />
+          <Input
             value={clientSecret}
             onChangeText={setClientSecret}
             placeholder="Client Secret"

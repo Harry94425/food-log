@@ -3,10 +3,12 @@ import * as Sharing from 'expo-sharing';
 import { useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { Alert, Pressable, Text, View } from 'react-native';
 import { KeyboardScrollView } from '@/components/KeyboardScrollView';
+import { RemindersCard } from '@/components/RemindersCard';
 import { StravaCard } from '@/components/StravaCard';
-import { ui } from '@/components/theme';
+import { Input } from '@/components/Input';
+import { useTheme } from '@/components/theme';
 import { exportCsv, toDateKey, Totals } from '@/lib/db';
 import { DEFAULT_GOALS, getApiKey, getSettings, Provider, PROVIDERS, saveSettings, setApiKey } from '@/lib/settings';
 
@@ -30,6 +32,7 @@ const toDraft = (g: Totals): GoalDraft => ({
 });
 
 export default function SettingsScreen() {
+  const { ui } = useTheme();
   const db = useSQLiteContext();
   const [provider, setProvider] = useState<Provider>('gemini');
   const [models, setModels] = useState(defaultModels);
@@ -109,8 +112,7 @@ export default function SettingsScreen() {
             ? '✅ 已設定金鑰（存在手機加密區）'
             : `尚未設定。到 ${PROVIDERS[provider].keyUrl} 取得金鑰。`}
         </Text>
-        <TextInput
-          style={ui.input}
+        <Input
           value={keyDraft}
           onChangeText={setKeyDraft}
           placeholder={hasKey[provider] ? '輸入新金鑰以更換' : '貼上 API 金鑰'}
@@ -119,13 +121,12 @@ export default function SettingsScreen() {
           autoCorrect={false}
         />
         {hasKey[provider] && (
-          <Pressable onPress={removeKey}>
-            <Text style={ui.muted}>移除金鑰</Text>
+          <Pressable style={ui.smallDangerButton} onPress={removeKey}>
+            <Text style={ui.smallDangerButtonText}>移除金鑰</Text>
           </Pressable>
         )}
         <Text style={ui.muted}>模型</Text>
-        <TextInput
-          style={ui.input}
+        <Input
           value={models[provider]}
           onChangeText={(v) => setModels((m) => ({ ...m, [provider]: v }))}
           autoCapitalize="none"
@@ -140,8 +141,8 @@ export default function SettingsScreen() {
         {GOAL_FIELDS.map((f) => (
           <View key={f.key} style={ui.row}>
             <Text style={[ui.text, { width: 60 }]}>{f.label}</Text>
-            <TextInput
-              style={[ui.input, { flex: 1 }]}
+            <Input
+              style={[{ flex: 1 }]}
               value={goals[f.key]}
               onChangeText={(v) => setGoals((g) => ({ ...g, [f.key]: v }))}
               keyboardType="numeric"
@@ -149,8 +150,8 @@ export default function SettingsScreen() {
             <Text style={[ui.muted, { width: 36 }]}>{f.unit}</Text>
           </View>
         ))}
-        <Pressable onPress={() => setGoals(toDraft(DEFAULT_GOALS))}>
-          <Text style={ui.muted}>恢復預設（增肌：2350 kcal / 蛋白 90g）</Text>
+        <Pressable style={ui.smallButton} onPress={() => setGoals(toDraft(DEFAULT_GOALS))}>
+          <Text style={ui.smallButtonText}>恢復預設（增肌：2350 kcal / 蛋白 90g）</Text>
         </Pressable>
       </View>
 
@@ -159,6 +160,8 @@ export default function SettingsScreen() {
       </Pressable>
 
       <StravaCard />
+
+      <RemindersCard />
 
       <Pressable style={ui.buttonOutline} onPress={onExport}>
         <Text style={ui.buttonOutlineText}>匯出 CSV 備份</Text>

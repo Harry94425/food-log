@@ -2,13 +2,14 @@ import { File } from 'expo-file-system';
 import { router, Stack, useLocalSearchParams, usePreventRemove } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Pressable, Text, View } from 'react-native';
 import { DateField } from '@/components/DateField';
 import { DraftItem, emptyItem, fromDraft, ItemEditor, toDraft } from '@/components/ItemEditor';
 import { KeyboardScrollView } from '@/components/KeyboardScrollView';
 import { BarcodeScanner } from '@/components/BarcodeScanner';
 import { LabelCard } from '@/components/LabelCard';
-import { colors, ui } from '@/components/theme';
+import { Input } from '@/components/Input';
+import { useTheme } from '@/components/theme';
 import {
   getMeal,
   insertMeal,
@@ -22,6 +23,7 @@ import {
 } from '@/lib/db';
 import { deletePhoto, persistPhoto, pickPhoto, PickedPhoto } from '@/lib/photo';
 import { getSavedProduct, lookupOpenFoodFacts, saveProduct } from '@/lib/products';
+import { scheduleReminders } from '@/lib/reminders';
 import { LABEL_TASK, MEAL_TASK } from '@/lib/recognizer/tasks';
 import type { FoodItem, LabelRecognition } from '@/lib/recognizer/types';
 import { getRecognizer } from '@/lib/settings';
@@ -53,12 +55,16 @@ const snap = (s: Snapshot) => JSON.stringify(s);
 
 /** 新增或編輯餐點；帶 id 參數時是編輯 */
 export default function MealEditorScreen() {
+  const { colors, ui } = useTheme();
   const db = useSQLiteContext();
-  const params = useLocalSearchParams<{ date?: string; id?: string }>();
+  const params = useLocalSearchParams<{ date?: string; id?: string; mealType?: MealType }>();
   const editId = params.id ? Number(params.id) : null;
 
   const [date, setDate] = useState(params.date ?? toDateKey());
-  const [mealType, setMealType] = useState<MealType>(defaultMealType());
+  // 從提醒通知點進來會帶餐別
+  const [mealType, setMealType] = useState<MealType>(
+    params.mealType && params.mealType in MEAL_LABELS ? params.mealType : defaultMealType(),
+  );
   const [title, setTitle] = useState('');
   const [store, setStore] = useState('');
   const [price, setPrice] = useState('');
@@ -337,6 +343,8 @@ export default function MealEditorScreen() {
       } else {
         await insertMeal(db, meal);
       }
+      // 今天記了這一餐，就取消今天這一餐的提醒
+      scheduleReminders(db).catch(() => {});
       allowLeave();
       router.back();
     } catch (e) {
@@ -375,8 +383,7 @@ export default function MealEditorScreen() {
 
       {showPast && (
         <View style={ui.card}>
-          <TextInput
-            style={ui.input}
+          <Input
             value={pastQuery}
             onChangeText={setPastQuery}
             placeholder="🔍 吃過的？搜尋店家或餐點名稱直接帶入"
@@ -384,11 +391,7 @@ export default function MealEditorScreen() {
           />
           {searching && pastResults.length === 0 && <Text style={ui.muted}>找不到符合的紀錄。</Text>}
           {pastResults.map((m) => (
-            <Pressable
-              key={m.id}
-              onPress={() => applyPast(m.id)}
-              style={{ paddingVertical: 6, borderTopWidth: 1, borderTopColor: colors.border }}
-            >
+            <Pressable key={m.id} onPress={() => applyPast(m.id)} style={ui.listItem}>
               <Text style={ui.text}>
                 {m.store ? <Text style={ui.muted}>{m.store}・</Text> : null}
                 {m.title}
@@ -401,12 +404,7 @@ export default function MealEditorScreen() {
         </View>
       )}
 
-      <TextInput
-        style={ui.input}
-        value={hint}
-        onChangeText={setHint}
-        placeholder="給 AI 的補充說明（選填），例如：飯只吃一半、無糖、大份"
-      />
+      <Input value={hint} onChangeText={setHint} placeholder="給 AI 的補充說明（選填），例如：飯只吃一半、無糖、大份" />
       <View style={ui.row}>
         <Pressable style={[ui.button, { flex: 1 }]} onPress={() => choose('camera')} disabled={busy}>
           <Text style={ui.buttonText}>📷 {photoUri ? '重拍' : '拍照'}</Text>
@@ -441,17 +439,11 @@ export default function MealEditorScreen() {
 
       <View style={ui.card}>
         <Text style={ui.muted}>餐點名稱</Text>
-        <TextInput style={ui.input} value={title} onChangeText={setTitle} placeholder="例如：豬排咖哩飯" />
+        <Input value={title} onChangeText={setTitle} placeholder="例如：豬排咖哩飯" />
         <Text style={ui.muted}>店家（選填）</Text>
-        <TextInput style={ui.input} value={store} onChangeText={setStore} placeholder="例如：學餐二樓、7-11" />
+        <Input value={store} onChangeText={setStore} placeholder="例如：學餐二樓、7-11" />
         <Text style={ui.muted}>價錢（元，選填）</Text>
-        <TextInput
-          style={ui.input}
-          value={price}
-          onChangeText={setPrice}
-          placeholder="例如 120"
-          keyboardType="numeric"
-        />
+        <Input value={price} onChangeText={setPrice} placeholder="例如 120" keyboardType="numeric" />
       </View>
 
       {items.map((it) => (

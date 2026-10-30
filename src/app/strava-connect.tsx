@@ -3,12 +3,13 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-import { colors, ui } from '@/components/theme';
+import { useTheme } from '@/components/theme';
 import { authorizeUrl, completeAuthorization, getCredentials, REDIRECT_URI } from '@/lib/strava';
 import { FIRST_IMPORT_DAYS, syncStrava } from '@/lib/stravaSync';
 
 /** 在 App 內開 Strava 授權頁，攔下導回 localhost 的網址取授權碼 */
 export default function StravaConnectScreen() {
+  const { colors, ui } = useTheme();
   const db = useSQLiteContext();
   const [url, setUrl] = useState<string | null>(null);
   const [finishing, setFinishing] = useState(false);

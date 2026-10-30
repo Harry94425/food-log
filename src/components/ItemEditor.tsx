@@ -1,11 +1,12 @@
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { searchPastItems } from '@/lib/db';
 import { ITEM_TEXT_TASK } from '@/lib/recognizer/tasks';
 import type { FoodItem } from '@/lib/recognizer/types';
 import { getRecognizer } from '@/lib/settings';
-import { colors, ui } from './theme';
+import { Input } from './Input';
+import { useTheme } from './theme';
 
 type NumField = 'kcal' | 'protein' | 'fat' | 'carbs';
 
@@ -83,6 +84,7 @@ type Props = {
  * - 改蛋白質、碳水、脂肪時自動算熱量（除非熱量是自己打的）
  */
 export function ItemEditor({ item, onChange, onRemove }: Props) {
+  const { colors, ui } = useTheme();
   const db = useSQLiteContext();
   const [suggestions, setSuggestions] = useState<FoodItem[]>([]);
   const [nameFocused, setNameFocused] = useState(false);
@@ -146,32 +148,28 @@ export function ItemEditor({ item, onChange, onRemove }: Props) {
   return (
     <View style={ui.card}>
       <View style={ui.row}>
-        <TextInput
-          style={[ui.input, { flex: 2 }]}
+        <Input
+          style={[{ flex: 2 }]}
           value={item.name}
           onChangeText={(v) => onChange({ name: v })}
           onFocus={() => setNameFocused(true)}
           onEndEditing={onNameDone}
           placeholder="食物，例如：白飯"
         />
-        <TextInput
-          style={[ui.input, { flex: 2 }]}
+        <Input
+          style={[{ flex: 2 }]}
           value={item.portion}
           onChangeText={(v) => onChange({ portion: v })}
           placeholder="份量，例如：半碗"
         />
-        <Pressable onPress={onRemove} hitSlop={8}>
-          <Text style={{ color: colors.danger, fontSize: 18 }}>✕</Text>
+        <Pressable style={[ui.smallDangerButton, { alignSelf: 'center' }]} onPress={onRemove} hitSlop={4}>
+          <Text style={ui.smallDangerButtonText}>✕</Text>
         </Pressable>
       </View>
 
       {showSuggestions &&
         suggestions.map((s) => (
-          <Pressable
-            key={s.name}
-            onPress={() => fill(s, 'history', false)}
-            style={{ paddingVertical: 4, borderTopWidth: 1, borderTopColor: colors.border }}
-          >
+          <Pressable key={s.name} onPress={() => fill(s, 'history', false)} style={ui.listItem}>
             <Text style={ui.text}>
               {s.name}{' '}
               <Text style={ui.muted}>
@@ -189,12 +187,7 @@ export function ItemEditor({ item, onChange, onRemove }: Props) {
               {f.label}
               {f.key === 'kcal' ? '' : '(g)'}
             </Text>
-            <TextInput
-              style={ui.input}
-              value={item[f.key]}
-              onChangeText={(v) => onNumber(f.key, v)}
-              keyboardType="decimal-pad"
-            />
+            <Input value={item[f.key]} onChangeText={(v) => onNumber(f.key, v)} keyboardType="decimal-pad" />
           </View>
         ))}
       </View>
@@ -218,8 +211,8 @@ export function ItemEditor({ item, onChange, onRemove }: Props) {
           <ActivityIndicator color={colors.primary} />
         ) : (
           item.name.trim() !== '' && (
-            <Pressable onPress={estimate} hitSlop={8}>
-              <Text style={[ui.muted, { color: colors.primary }]}>AI 估算</Text>
+            <Pressable style={ui.smallButton} onPress={estimate} hitSlop={4}>
+              <Text style={ui.smallButtonText}>AI 估算</Text>
             </Pressable>
           )
         )}
