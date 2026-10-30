@@ -1,10 +1,8 @@
-import { Picker } from '@react-native-picker/picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
 import {
-  addExercise,
   deleteExercise,
   deleteMeal,
   Exercise,
@@ -17,7 +15,7 @@ import {
   setWeight,
   sumItems,
 } from '@/lib/db';
-import { EXERCISE_PRESETS, isIncludedInGoal } from '@/lib/exercise';
+import { isIncludedInGoal } from '@/lib/exercise';
 import { deletePhoto } from '@/lib/photo';
 import { autoSyncStrava } from '@/lib/stravaSync';
 import { getSettings, goalsForDay } from '@/lib/settings';
@@ -32,14 +30,6 @@ export function DayView({ date }: { date: string }) {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [baseGoals, setBaseGoals] = useState<Totals | null>(null);
   const [weight, setWeightState] = useState('');
-  const [exName, setExName] = useState(EXERCISE_PRESETS[0].name);
-  const [exKcal, setExKcal] = useState(String(EXERCISE_PRESETS[0].kcal ?? ''));
-
-  const onPickExercise = (name: string) => {
-    setExName(name);
-    const preset = EXERCISE_PRESETS.find((p) => p.name === name);
-    setExKcal(preset?.kcal != null ? String(preset.kcal) : '');
-  };
 
   const load = useCallback(async () => {
     const [m, e, s, w] = await Promise.all([
@@ -68,16 +58,6 @@ export function DayView({ date }: { date: string }) {
   const exerciseKcal = exercises.reduce((s, e) => s + e.kcal, 0);
   const spent = meals.reduce((s, m) => s + (m.price ?? 0), 0);
   const goals = baseGoals ? goalsForDay(baseGoals, exerciseKcal) : null;
-
-  const exIncluded = isIncludedInGoal(exName);
-
-  const onAddExercise = async () => {
-    const kcal = exIncluded ? 0 : Number(exKcal);
-    if (!exName.trim() || !(exIncluded || kcal > 0)) return;
-    await addExercise(db, date, exName.trim(), kcal);
-    onPickExercise(exName);
-    load();
-  };
 
   const onSaveWeight = async () => {
     const kg = Number(weight);
@@ -188,29 +168,9 @@ export function DayView({ date }: { date: string }) {
             </Text>
           </Pressable>
         ))}
-        <View style={[ui.input, { paddingVertical: 0, paddingHorizontal: 0 }]}>
-          <Picker selectedValue={exName} onValueChange={onPickExercise} mode="dropdown">
-            {EXERCISE_PRESETS.map((p) => (
-              <Picker.Item key={p.name} label={p.name} value={p.name} />
-            ))}
-          </Picker>
-        </View>
-        <View style={ui.row}>
-          {exIncluded ? (
-            <Text style={[ui.muted, { flex: 1 }]}>消耗已含在每日目標，不另外加熱量</Text>
-          ) : (
-            <TextInput
-              style={[ui.input, { flex: 1 }]}
-              value={exKcal}
-              onChangeText={setExKcal}
-              placeholder={exName === '公路車' ? '消耗 kcal（看碼表或 Strava）' : '消耗 kcal'}
-              keyboardType="numeric"
-            />
-          )}
-          <Pressable style={[ui.button, { paddingVertical: 9 }]} onPress={onAddExercise}>
-            <Text style={ui.buttonText}>加入</Text>
-          </Pressable>
-        </View>
+        {exercises.length === 0 && (
+          <Text style={ui.muted}>沒有運動紀錄。運動會從 Strava 自動匯入，沒連結的話到「設定」連結。</Text>
+        )}
       </View>
 
       <View style={ui.card}>

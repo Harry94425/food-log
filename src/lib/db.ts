@@ -294,11 +294,7 @@ export async function getExercises(db: SQLiteDatabase, date: string) {
   return db.getAllAsync<Exercise>('SELECT * FROM exercises WHERE date = ? ORDER BY id', date);
 }
 
-export async function addExercise(db: SQLiteDatabase, date: string, name: string, kcal: number) {
-  await db.runAsync('INSERT INTO exercises (date, name, kcal) VALUES (?, ?, ?)', date, name, kcal);
-}
-
-/** 只能刪手動新增的；Strava 匯入的以 Strava 為準 */
+/** 只能刪以前手動新增的；Strava 匯入的以 Strava 為準 */
 export async function deleteExercise(db: SQLiteDatabase, id: number) {
   await db.runAsync('DELETE FROM exercises WHERE id = ? AND strava_id IS NULL', id);
 }
