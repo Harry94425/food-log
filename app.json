@@ -32,7 +32,8 @@
         "expo-image-picker",
         {
           "cameraPermission": "拍攝餐點照片以辨識食物與熱量",
-          "photosPermission": "從相簿選擇餐點照片"
+          "photosPermission": "從相簿選擇餐點照片",
+          "microphonePermission": false
         }
       ],
       "@react-native-community/datetimepicker",

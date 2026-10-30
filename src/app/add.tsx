@@ -1,10 +1,10 @@
 import { File } from 'expo-file-system';
-import { router, Stack, useLocalSearchParams } from 'expo-router';
+import { router, Stack, useLocalSearchParams, usePreventRemove } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Image, Pressable, Text, TextInput, View } from 'react-native';
 import { DateField } from '@/components/DateField';
-import { DraftItem, EMPTY_ITEM, fromDraft, ItemEditor, toDraft } from '@/components/ItemEditor';
+import { DraftItem, emptyItem, fromDraft, ItemEditor, toDraft } from '@/components/ItemEditor';
 import { KeyboardScrollView } from '@/components/KeyboardScrollView';
 import { BarcodeScanner } from '@/components/BarcodeScanner';
 import { LabelCard } from '@/components/LabelCard';
@@ -39,6 +39,18 @@ function defaultMealType(): MealType {
   return MEAL_HOURS.find(([start, end]) => h >= start && h < end)?.[2] ?? 'late_night';
 }
 
+type Snapshot = {
+  date: string;
+  mealType: MealType;
+  title: string;
+  store: string;
+  price: string;
+  photo: string | null;
+  items: FoodItem[];
+};
+/** 比對用：內容一樣就是沒有改過 */
+const snap = (s: Snapshot) => JSON.stringify(s);
+
 /** 新增或編輯餐點；帶 id 參數時是編輯 */
 export default function MealEditorScreen() {
   const db = useSQLiteContext();
@@ -65,6 +77,10 @@ export default function MealEditorScreen() {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
   const [loaded, setLoaded] = useState(editId == null);
+  /** 剛打開時的內容；新增是空白，編輯是讀進來的那筆 */
+  const [initial, setInitial] = useState<string | null>(() =>
+    editId == null ? snap({ date, mealType, title: '', store: '', price: '', photo: null, items: [] }) : null,
+  );
 
   useEffect(() => {
     if (editId == null) return;
@@ -82,7 +98,18 @@ export default function MealEditorScreen() {
       setPrice(meal.price != null ? String(meal.price) : '');
       setSavedPhotoUri(meal.photo_uri);
       setNote(meal.note);
-      setItems(meal.items.map(toDraft));
+      setItems(meal.items.map((i) => toDraft(i)));
+      setInitial(
+        snap({
+          date: meal.date,
+          mealType: meal.meal_type,
+          title: meal.title,
+          store: meal.store,
+          price: meal.price != null ? String(meal.price) : '',
+          photo: meal.photo_uri,
+          items: meal.items.map((i) => fromDraft(toDraft(i))),
+        }),
+      );
       setLoaded(true);
     })();
   }, [db, editId]);
@@ -106,7 +133,7 @@ export default function MealEditorScreen() {
     setTitle(meal.title);
     setStore(meal.store);
     setPrice(meal.price != null ? String(meal.price) : '');
-    setItems(meal.items.map(toDraft));
+    setItems(meal.items.map((i) => toDraft(i)));
     setNote('');
   };
 
@@ -146,15 +173,45 @@ export default function MealEditorScreen() {
         hint: hint.trim(),
         onStatus: setStatus,
       });
-      setTitle(r.title);
-      setItems(r.items.map(toDraft));
-      setNote(r.note);
+      applyPhotoResult(
+        r.title,
+        r.items.map((i) => toDraft(i, 'photo')),
+        r.note,
+      );
     } catch (e) {
       Alert.alert('辨識失敗', (e as Error).message);
     } finally {
       setBusy(false);
       setStatus('');
     }
+  };
+
+  /**
+   * 照片辨識結果：上一次辨識的品項直接換掉；
+   * 還有其他品項（掃條碼、手動加的、編輯中的舊紀錄）時，問要加在後面還是全部取代。
+   */
+  const applyPhotoResult = (newTitle: string, photoItems: DraftItem[], newNote: string) => {
+    const others = items.filter((i) => i.source !== 'photo');
+    const replaceAll = () => {
+      setTitle(newTitle);
+      setItems(photoItems);
+      setNote(newNote);
+    };
+    if (others.length === 0) {
+      replaceAll();
+      return;
+    }
+    Alert.alert('已經有其他品項', `辨識出 ${photoItems.length} 項，要怎麼處理？`, [
+      { text: '全部取代', style: 'destructive', onPress: replaceAll },
+      {
+        text: '加在後面',
+        onPress: () => {
+          setItems([...others, ...photoItems]);
+          if (!title.trim()) setTitle(newTitle);
+          setNote(newNote);
+        },
+      },
+    ]);
   };
 
   /** 條碼查不到時，拍一次營養標示讓 AI 讀並記在條碼底下；照片只用來讀數字，不存成這餐的照片 */
@@ -227,8 +284,27 @@ export default function MealEditorScreen() {
     setLabel(null);
   };
 
-  const update = (idx: number, patch: Partial<DraftItem>) =>
-    setItems((prev) => prev.map((it, i) => (i === idx ? { ...it, ...patch } : it)));
+  const update = (key: string, patch: Partial<DraftItem>) =>
+    setItems((prev) => prev.map((it) => (it.key === key ? { ...it, ...patch } : it)));
+
+  // 有改過還沒存就離開（返回鍵、手勢、左上角），先問一下
+  const current = snap({
+    date,
+    mealType,
+    title,
+    store,
+    price,
+    photo: photo?.uri ?? savedPhotoUri,
+    items: items.map(fromDraft),
+  });
+  const dirty = initial !== null && current !== initial;
+  const allowLeave = usePreventRemove(dirty, ({ repeat }) =>
+    Alert.alert('還沒儲存', '要放棄這次的修改嗎？', [
+      { text: '繼續編輯', style: 'cancel' },
+      // repeat 會先解除攔截再繼續離開
+      { text: '放棄', style: 'destructive', onPress: repeat },
+    ]),
+  );
 
   const save = async () => {
     const finalItems = items.map(fromDraft);
@@ -261,6 +337,7 @@ export default function MealEditorScreen() {
       } else {
         await insertMeal(db, meal);
       }
+      allowLeave();
       router.back();
     } catch (e) {
       Alert.alert('儲存失敗', (e as Error).message);
@@ -377,16 +454,16 @@ export default function MealEditorScreen() {
         />
       </View>
 
-      {items.map((it, idx) => (
+      {items.map((it) => (
         <ItemEditor
-          key={idx}
+          key={it.key}
           item={it}
-          onChange={(patch) => update(idx, patch)}
-          onRemove={() => setItems((p) => p.filter((_, i) => i !== idx))}
+          onChange={(patch) => update(it.key, patch)}
+          onRemove={() => setItems((p) => p.filter((x) => x.key !== it.key))}
         />
       ))}
 
-      <Pressable style={ui.buttonOutline} onPress={() => setItems((p) => [...p, EMPTY_ITEM])}>
+      <Pressable style={ui.buttonOutline} onPress={() => setItems((p) => [...p, emptyItem()])}>
         <Text style={ui.buttonOutlineText}>＋ 手動新增品項</Text>
       </Pressable>
 

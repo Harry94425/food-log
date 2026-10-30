@@ -12,10 +12,12 @@ type NumField = 'kcal' | 'protein' | 'fat' | 'carbs';
 /** 編輯中的數字先存字串，才能輸入「12.」這種中間狀態 */
 export type DraftItem = Omit<FoodItem, NumField> &
   Record<NumField, string> & {
+    /** 列表裡固定的識別碼；不能用索引，刪除品項時非同步的估算才不會填錯格 */
+    key: string;
     /** 熱量是自己打的，就不再用三大營養素自動算 */
     kcalManual?: boolean;
-    /** 數字從哪來，顯示提醒用 */
-    source?: 'history' | 'ai';
+    /** 數字從哪來：history / ai 顯示提醒；photo 是照片辨識的，重新辨識時會被換掉 */
+    source?: 'history' | 'ai' | 'photo';
   };
 
 const NUM_FIELDS: { key: NumField; label: string }[] = [
@@ -25,15 +27,32 @@ const NUM_FIELDS: { key: NumField; label: string }[] = [
   { key: 'fat', label: '脂肪' },
 ];
 
-export const EMPTY_ITEM: DraftItem = { name: '', portion: '', kcal: '', protein: '', fat: '', carbs: '' };
+let nextKey = 0;
+const newKey = () => String(++nextKey);
 
-export const toDraft = (i: FoodItem): DraftItem => ({
+export const emptyItem = (): DraftItem => ({
+  key: newKey(),
+  name: '',
+  portion: '',
+  kcal: '',
+  protein: '',
+  fat: '',
+  carbs: '',
+});
+
+const draftFields = (i: FoodItem) => ({
   name: i.name,
   portion: i.portion,
   kcal: String(i.kcal),
   protein: String(i.protein),
   fat: String(i.fat),
   carbs: String(i.carbs),
+});
+
+export const toDraft = (i: FoodItem, source?: DraftItem['source']): DraftItem => ({
+  key: newKey(),
+  ...draftFields(i),
+  source,
 });
 
 export const fromDraft = (d: DraftItem): FoodItem => ({
@@ -82,7 +101,7 @@ export function ItemEditor({ item, onChange, onRemove }: Props) {
 
   const fill = (from: FoodItem, source: DraftItem['source'], keepName: boolean) =>
     onChange({
-      ...toDraft(from),
+      ...draftFields(from),
       name: keepName ? item.name : from.name,
       // 份量自己有寫就保留
       portion: item.portion.trim() || from.portion,
