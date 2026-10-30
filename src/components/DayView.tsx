@@ -58,8 +58,8 @@ export function DayView({ date }: { date: string }) {
     useCallback(() => {
       load();
       // 有連 Strava 就順便抓新活動，抓到才重新整理
-      autoSyncStrava(db).then((added) => {
-        if (added > 0) load();
+      autoSyncStrava(db).then((changed) => {
+        if (changed) load();
       });
     }, [db, load]),
   );
@@ -163,17 +163,28 @@ export function DayView({ date }: { date: string }) {
         {exercises.map((e) => (
           <Pressable
             key={e.id}
-            onLongPress={async () => {
-              await deleteExercise(db, e.id);
-              load();
+            style={{
+              borderWidth: 1,
+              borderColor: colors.border,
+              borderRadius: 8,
+              paddingHorizontal: 10,
+              paddingVertical: 8,
+              gap: 2,
             }}
+            // Strava 匯入的以 Strava 為準，要改請到 Strava 改
+            onLongPress={
+              e.strava_id
+                ? undefined
+                : async () => {
+                    await deleteExercise(db, e.id);
+                    load();
+                  }
+            }
           >
-            <Text style={ui.text}>
-              {e.name}{' '}
-              <Text style={ui.muted}>
-                {isIncludedInGoal(e.name) ? '已含在每日目標' : `${e.kcal} kcal`}
-                {e.strava_id ? ' · Strava' : ''}（長按刪除）
-              </Text>
+            <Text style={[ui.text, { fontWeight: '600' }]}>{e.name}</Text>
+            <Text style={ui.muted}>
+              {isIncludedInGoal(e.name) ? '已含在每日目標' : `${e.kcal} kcal`}
+              {e.strava_id ? ' · 來自 Strava' : '（長按刪除）'}
             </Text>
           </Pressable>
         ))}

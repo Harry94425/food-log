@@ -5,7 +5,7 @@ import { ActivityIndicator, Alert, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { colors, ui } from '@/components/theme';
 import { authorizeUrl, completeAuthorization, getCredentials, REDIRECT_URI } from '@/lib/strava';
-import { SYNC_DAYS, syncStrava } from '@/lib/stravaSync';
+import { FIRST_IMPORT_DAYS, syncStrava } from '@/lib/stravaSync';
 
 /** 在 App 內開 Strava 授權頁，攔下導回 localhost 的網址取授權碼 */
 export default function StravaConnectScreen() {
@@ -24,8 +24,8 @@ export default function StravaConnectScreen() {
     setFinishing(true);
     try {
       await completeAuthorization(redirected);
-      const added = await syncStrava(db);
-      Alert.alert('已連結 Strava', `匯入最近 ${SYNC_DAYS} 天的 ${added} 筆活動。`);
+      const { added } = await syncStrava(db);
+      Alert.alert('已連結 Strava', `匯入最近 ${FIRST_IMPORT_DAYS} 天的 ${added} 筆活動，之後的新活動都會自動記錄。`);
     } catch (e) {
       Alert.alert('Strava', (e as Error).message);
     }

@@ -3,7 +3,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, TextInput, View } from 'react-native';
 import { CALLBACK_DOMAIN, connectedAthlete, disconnect, getCredentials, saveCredentials } from '@/lib/strava';
-import { SYNC_DAYS, syncStrava } from '@/lib/stravaSync';
+import { syncStrava } from '@/lib/stravaSync';
 import { colors, ui } from './theme';
 
 /** 設定頁的 Strava 連結區塊 */
@@ -45,8 +45,9 @@ export function StravaCard() {
 
   const onSync = () =>
     run(async () => {
-      const added = await syncStrava(db);
-      Alert.alert('同步完成', added ? `新增 ${added} 筆活動。` : '沒有新的活動。');
+      const { added, removed } = await syncStrava(db);
+      const changes = [added && `新增 ${added} 筆`, removed && `移除 ${removed} 筆（Strava 上已刪除）`].filter(Boolean);
+      Alert.alert('同步完成', changes.length ? `${changes.join('，')}。` : '和 Strava 一致，沒有變動。');
     });
 
   const onDisconnect = () =>
@@ -68,7 +69,8 @@ export function StravaCard() {
       {athlete ? (
         <>
           <Text style={ui.muted}>
-            ✅ 已連結：{athlete}。打開「今天」頁會自動匯入最近 {SYNC_DAYS} 天的新活動，騎車熱量直接加進當天目標。
+            ✅ 已連結：{athlete}。打開「今天」頁會自動補齊上次同步後的新活動，以 Strava 為準（要改或刪活動請在 Strava
+            上改）。騎車熱量直接加進當天目標。
           </Text>
           <Pressable style={ui.buttonOutline} onPress={onSync} disabled={busy}>
             <Text style={ui.buttonOutlineText}>立即同步</Text>
