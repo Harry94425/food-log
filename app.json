@@ -17,7 +17,10 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.harry94425.foodlog"
+      "package": "com.harry94425.foodlog",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -56,6 +59,16 @@
     "scheme": "foodlog",
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "4878715a-4377-4329-8851-341e4282d127"
+      }
     }
   }
 }
