@@ -12,8 +12,19 @@
 - **每日目標**：預設增肌 2350 kcal、蛋白質 90g（已含每週 2–3 次重訓）；騎車等運動消耗自動加進當天目標，用碳水補
 - **Strava**：連結後打開「今天」頁就會補齊新活動，以 Strava 為準（在 Strava 改名、刪除會跟著改）；重訓記 0 kcal（已含在目標裡）
 - **體重**：每天輸入，歷史頁看每週平均，兩週沒增加會提醒多吃
-- **歷史**：最近 30 天每天一列，沒記、缺午餐或晚餐會標出來；本月、上月餐費
+- **歷史**：最近 30 天每天一列，沒記、缺午餐或晚餐會標出來；熱量、蛋白質達標率；本月、上月餐費
+- **提醒**：午餐、晚餐時間還沒記就通知，點通知直接新增
+- **深色模式**：跟著手機切換
 - **匯出**：設定頁可匯出 CSV
+
+## 安裝
+
+1. 到 [Releases](../../releases/latest) 下載 `food-log.apk`，在 Android 手機上安裝（要允許「安裝不明來源的應用程式」；只支援 64 位元 arm64 手機）
+2. 到 [Google AI Studio](https://aistudio.google.com/apikey) 申請免費的 Gemini API 金鑰，填進「設定」頁
+3. 在「設定」把每日目標改成自己的（預設是一般增肌目標）
+4. 要串 Strava 的話，到 [Strava API 設定](https://www.strava.com/settings/api) 建立自己的應用程式（Authorization Callback Domain 填 `localhost`），把 Client ID、Client Secret 填進「設定」
+
+金鑰只存在手機裡（SecureStore），資料也只存在手機裡，沒有雲端。更新時下載新版 APK 覆蓋安裝，資料會保留。
 
 ## 開發
 
