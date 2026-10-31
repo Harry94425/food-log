@@ -13,6 +13,7 @@ import {
   Totals,
   weekdayLabel,
 } from '@/lib/db';
+import { GoalType, getProfile } from '@/lib/profile';
 import { getSettings, goalsForDay } from '@/lib/settings';
 
 /** 沒紀錄的日子也列出來：至少最近 MIN_DAYS 天，最多往回到 MAX_DAYS 天 */
@@ -120,6 +121,52 @@ function weeklyAverages(weights: { date: string; kg: number }[]): WeekAvg[] {
   return weeks;
 }
 
+/** 這週和上週比的變化方向對不對：增肌要升、減脂要降、維持不要差太多 */
+function onTrack(goal: GoalType, diff: number) {
+  if (goal === 'lose') return diff <= 0;
+  if (goal === 'maintain') return Math.abs(diff) <= 0.25;
+  return diff >= 0;
+}
+
+/** 每週體重變化的目標說明，以及最近兩週偏離目標時的建議 */
+function weightAdvice(goal: GoalType, weeks: WeekAvg[]): { target: string; warning: string | null } {
+  const latest = weeks[0]?.avg;
+  // 比兩週前那週：單週平均波動大，看兩週比較穩
+  const change = weeks.length >= 3 ? weeks[0].avg - weeks[2].avg : null;
+  if (goal === 'lose') {
+    const [lo, hi] = latest ? [latest * 0.005, latest * 0.01] : [0, 0];
+    return {
+      target: latest ? `目標：每週減少 ${lo.toFixed(1)}–${hi.toFixed(1)} kg（體重的 0.5–1%）` : '目標：每週減少體重的 0.5–1%',
+      warning:
+        change == null
+          ? null
+          : change > -0.2
+            ? '⚠️ 兩週體重幾乎沒下降，建議每天少吃約 200 kcal（可到設定調低熱量目標）。'
+            : change < -hi * 2
+              ? '⚠️ 兩週掉太快，容易流失肌肉，建議每天多吃約 200 kcal、蛋白質吃足。'
+              : null,
+    };
+  }
+  if (goal === 'maintain') {
+    return {
+      target: '目標：體重維持，兩週變化在 0.5 kg 內',
+      warning:
+        change == null || Math.abs(change) <= 0.5
+          ? null
+          : change > 0
+            ? '⚠️ 兩週體重增加超過 0.5 kg，建議每天少吃約 200 kcal。'
+            : '⚠️ 兩週體重減少超過 0.5 kg，建議每天多吃約 200 kcal。',
+    };
+  }
+  return {
+    target: '目標：每週增加 0.25–0.4 kg',
+    warning:
+      change != null && change < 0.2
+        ? '⚠️ 兩週體重幾乎沒增加，建議每天多吃約 200 kcal（可到設定調高熱量目標）。'
+        : null,
+  };
+}
+
 export default function HistoryScreen() {
   const { colors, ui } = useTheme();
   const db = useSQLiteContext();
@@ -128,6 +175,7 @@ export default function HistoryScreen() {
   const [weeks, setWeeks] = useState<WeekAvg[]>([]);
   const [months, setMonths] = useState<MonthSpend[]>([]);
   const [rates, setRates] = useState<HitRate[]>([]);
+  const [goalType, setGoalType] = useState<GoalType>('gain');
 
   useFocusEffect(
     useCallback(() => {
@@ -135,23 +183,24 @@ export default function HistoryScreen() {
         const since = new Date();
         since.setDate(since.getDate() - 28);
         const monthKeys = recentMonths();
-        const [d, s, w, ...m] = await Promise.all([
+        const [d, s, p, w, ...m] = await Promise.all([
           getDaySummaries(db),
           getSettings(db),
+          getProfile(db),
           getWeights(db, toDateKey(since)),
           ...monthKeys.map((mk) => getMonthSpending(db, mk.key)),
         ]);
         setDays(fillDays(d));
         setGoals(s.goals);
         setRates(hitRates(d, s.goals));
+        setGoalType(p?.goal ?? 'gain');
         setWeeks(weeklyAverages(w));
         setMonths(monthKeys.map((mk, i) => ({ label: mk.label, ...m[i] })));
       })();
     }, [db]),
   );
 
-  // 連續兩週平均體重沒增加就提醒
-  const stalled = weeks.length >= 3 && weeks[0].avg - weeks[2].avg < 0.2;
+  const advice = weightAdvice(goalType, weeks);
 
   return (
     <FlatList
@@ -207,7 +256,7 @@ export default function HistoryScreen() {
                 <Text key={w.label} style={ui.text}>
                   {w.label}：{w.avg.toFixed(1)} kg <Text style={ui.muted}>（{w.count} 筆）</Text>
                   {diff != null && (
-                    <Text style={{ color: diff >= 0 ? colors.carbs : colors.danger }}>
+                    <Text style={{ color: onTrack(goalType, diff) ? colors.carbs : colors.danger }}>
                       {'  '}
                       {diff >= 0 ? '+' : ''}
                       {diff.toFixed(2)}
@@ -216,12 +265,8 @@ export default function HistoryScreen() {
                 </Text>
               );
             })}
-            <Text style={ui.muted}>目標：每週增加 0.25–0.4 kg</Text>
-            {stalled && (
-              <Text style={[ui.text, { color: colors.fat }]}>
-                ⚠️ 兩週體重幾乎沒增加，建議每天多吃約 200 kcal（可到設定調高熱量目標）。
-              </Text>
-            )}
+            <Text style={ui.muted}>{advice.target}</Text>
+            {advice.warning && <Text style={[ui.text, { color: colors.fat }]}>{advice.warning}</Text>}
           </View>
         </View>
       }
