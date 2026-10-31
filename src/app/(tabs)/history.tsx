@@ -288,7 +288,7 @@ export default function HistoryScreen() {
                 backgroundColor: empty ? colors.dangerBg : colors.warnBg,
               },
             ]}
-            onPress={() => router.push({ pathname: '/day/[date]', params: { date: item.date } })}
+            onPress={() => router.navigate({ pathname: '/', params: { date: item.date, t: String(Date.now()) } })}
           >
             <View style={[ui.row, { justifyContent: 'space-between' }]}>
               <Text style={[ui.text, { fontWeight: '700' }]}>

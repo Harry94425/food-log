@@ -11,6 +11,7 @@ import { LabelCard } from '@/components/LabelCard';
 import { Input } from '@/components/Input';
 import { useTheme } from '@/components/theme';
 import {
+  defaultMealType,
   getMeal,
   insertMeal,
   MEAL_LABELS,
@@ -27,19 +28,6 @@ import { scheduleReminders } from '@/lib/reminders';
 import { LABEL_TASK, MEAL_TASK } from '@/lib/recognizer/tasks';
 import type { FoodItem, LabelRecognition } from '@/lib/recognizer/types';
 import { getRecognizer } from '@/lib/settings';
-
-/** 依現在時間預設餐別：[開始小時, 結束小時(不含), 餐別]，其他時間算宵夜 */
-const MEAL_HOURS: [number, number, MealType][] = [
-  [5, 11, 'breakfast'], // 05:00–10:59
-  [11, 14, 'lunch'], // 11:00–13:59
-  [14, 17, 'snack'], // 14:00–16:59
-  [17, 21, 'dinner'], // 17:00–20:59
-];
-
-function defaultMealType(): MealType {
-  const h = new Date().getHours();
-  return MEAL_HOURS.find(([start, end]) => h >= start && h < end)?.[2] ?? 'late_night';
-}
 
 type Snapshot = {
   date: string;

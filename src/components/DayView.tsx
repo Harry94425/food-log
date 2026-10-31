@@ -3,6 +3,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { Alert, Image, Pressable, Text, View } from 'react-native';
 import {
+  defaultMealType,
   deleteExercise,
   deleteMeal,
   Exercise,
@@ -11,9 +12,12 @@ import {
   Meal,
   MEAL_LABELS,
   mealTitle,
+  MealType,
   sumItems,
+  toDateKey,
 } from '@/lib/db';
 import { isIncludedInGoal } from '@/lib/exercise';
+import { MEAL_SECTIONS, mealTargets } from '@/lib/mealPlan';
 import { deletePhoto } from '@/lib/photo';
 import { scheduleReminders } from '@/lib/reminders';
 import { autoSyncStrava } from '@/lib/stravaSync';
@@ -23,6 +27,14 @@ import { KeyboardScrollView } from './KeyboardScrollView';
 import { ProgressBar } from './ProgressBar';
 import { WeightCard } from './WeightCard';
 import { useTheme } from './theme';
+
+/** 主頁分區：早、午、晚固定顯示，其他餐別合成一區 */
+/** 「其他」區按＋時的餐別：現在時段就是其中一種就用它，否則先選點心 */
+function addTypeFor(types: MealType[]): MealType {
+  if (types.length === 1) return types[0];
+  const t = defaultMealType();
+  return types.includes(t) ? t : 'snack';
+}
 
 export function DayView({ date }: { date: string }) {
   const { colors, ui } = useTheme();
@@ -53,6 +65,16 @@ export function DayView({ date }: { date: string }) {
   const spent = meals.reduce((s, m) => s + (m.price ?? 0), 0);
   const goals = baseGoals ? goalsForDay(baseGoals, exerciseKcal) : null;
 
+  const isToday = date === toDateKey();
+  const hour = new Date().getHours();
+  const sections = MEAL_SECTIONS.map((section) => {
+    const list = meals.filter((m) => section.types.includes(m.meal_type));
+    const t = sumItems(list.flatMap((m) => m.items));
+    return { section, list, eaten: { kcal: t.kcal, protein: t.protein } };
+  });
+  // 每一區建議吃多少：還沒吃的餐會分到今天剩下的量
+  const targets = goals ? mealTargets(goals, sections.map((x) => x.eaten), isToday, hour) : null;
+
   const onDeleteMeal = (meal: Meal) => {
     Alert.alert('刪除這一餐？', mealTitle(meal), [
       { text: '取消', style: 'cancel' },
@@ -70,6 +92,60 @@ export function DayView({ date }: { date: string }) {
     ]);
   };
 
+  const renderMeal = (meal: Meal, showType: boolean) => {
+    const t = sumItems(meal.items);
+    const title = mealTitle(meal);
+    // 只有一個品項而且就是餐名時，不重複列出
+    const itemNames = meal.items.map((i) => i.name).join('、');
+    const showItems = itemNames !== '' && itemNames !== title;
+    return (
+      <Pressable
+        key={meal.id}
+        style={ui.card}
+        onPress={() => router.push({ pathname: '/add', params: { id: String(meal.id) } })}
+        onLongPress={() => onDeleteMeal(meal)}
+      >
+        <View style={[ui.row, { alignItems: 'center', gap: 12 }]}>
+          {meal.photo_uri && (
+            <Image source={{ uri: meal.photo_uri }} style={{ width: 56, height: 56, borderRadius: 8 }} />
+          )}
+          <View style={{ flex: 1, gap: 2 }}>
+            {(showType || meal.store) && (
+              <Text style={ui.muted} numberOfLines={1}>
+                {[showType && MEAL_LABELS[meal.meal_type], meal.store].filter(Boolean).join(' · ')}
+              </Text>
+            )}
+            <Text style={[ui.text, { fontWeight: '700', fontSize: 16 }]} numberOfLines={1}>
+              {title}
+            </Text>
+            {showItems && (
+              <Text style={ui.muted} numberOfLines={1}>
+                {itemNames}
+              </Text>
+            )}
+          </View>
+          <View style={{ alignItems: 'flex-end', gap: 2 }}>
+            <Text style={[ui.text, { fontWeight: '700', fontSize: 16 }]}>{Math.round(t.kcal)} kcal</Text>
+            {meal.price != null && <Text style={ui.muted}>${meal.price}</Text>}
+          </View>
+        </View>
+        <View style={[ui.row, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8 }]}>
+          {(
+            [
+              ['蛋白', t.protein, colors.protein],
+              ['碳水', t.carbs, colors.carbs],
+              ['脂肪', t.fat, colors.fat],
+            ] as const
+          ).map(([label, value, color]) => (
+            <Text key={label} style={[ui.muted, { flex: 1, textAlign: 'center' }]}>
+              {label} <Text style={{ color, fontWeight: '700' }}>{Math.round(value)}g</Text>
+            </Text>
+          ))}
+        </View>
+      </Pressable>
+    );
+  };
+
   return (
     <KeyboardScrollView style={ui.screen} contentContainerStyle={ui.content}>
       {goals && (
@@ -79,64 +155,44 @@ export function DayView({ date }: { date: string }) {
           <ProgressBar label="碳水" value={totals.carbs} goal={goals.carbs} unit="g" color={colors.carbs} />
           <ProgressBar label="脂肪" value={totals.fat} goal={goals.fat} unit="g" color={colors.fat} />
           {exerciseKcal > 0 && <Text style={ui.muted}>已含運動消耗 +{exerciseKcal} kcal（用碳水補足）</Text>}
-          <Text style={[ui.text, { fontWeight: '600' }]}>今日餐費 ${Math.round(spent)}</Text>
+          <Text style={[ui.text, { fontWeight: '600' }]}>餐費 ${Math.round(spent)}</Text>
         </View>
       )}
 
-      <Pressable style={ui.button} onPress={() => router.push({ pathname: '/add', params: { date } })}>
-        <Text style={ui.buttonText}>＋ 新增餐點</Text>
-      </Pressable>
-
-      {meals.map((meal) => {
-        const t = sumItems(meal.items);
-        const title = mealTitle(meal);
-        // 只有一個品項而且就是餐名時，不重複列出
-        const itemNames = meal.items.map((i) => i.name).join('、');
-        const showItems = itemNames !== '' && itemNames !== title;
+      {sections.map(({ section, list, eaten }, i) => {
+        if (isToday && hour < section.fromHour && list.length === 0) return null;
+        const isOther = section.types.length > 1;
+        const target = targets?.[i];
         return (
-          <Pressable
-            key={meal.id}
-            style={ui.card}
-            onPress={() => router.push({ pathname: '/add', params: { id: String(meal.id) } })}
-            onLongPress={() => onDeleteMeal(meal)}
-          >
-            <View style={[ui.row, { alignItems: 'center', gap: 12 }]}>
-              {meal.photo_uri && (
-                <Image source={{ uri: meal.photo_uri }} style={{ width: 56, height: 56, borderRadius: 8 }} />
-              )}
-              <View style={{ flex: 1, gap: 2 }}>
-                <Text style={ui.muted} numberOfLines={1}>
-                  {MEAL_LABELS[meal.meal_type]}
-                  {meal.store ? ` · ${meal.store}` : ''}
+          <View key={section.label} style={{ gap: 8 }}>
+            <View style={[ui.row, { justifyContent: 'space-between' }]}>
+              <View style={{ flexShrink: 1, gap: 2 }}>
+                <Text style={[ui.text, { fontWeight: '700' }]} numberOfLines={1}>
+                  {section.label}
                 </Text>
-                <Text style={[ui.text, { fontWeight: '700', fontSize: 16 }]} numberOfLines={1}>
-                  {title}
-                </Text>
-                {showItems && (
+                {target && (
                   <Text style={ui.muted} numberOfLines={1}>
-                    {itemNames}
+                    {list.length > 0
+                      ? `${Math.round(eaten.kcal)} / ${target.kcal} kcal · 蛋白 ${Math.round(eaten.protein)} / ${target.protein}g`
+                      : target.kcal > 0
+                        ? `建議 ${target.kcal} kcal · 蛋白 ${target.protein}g`
+                        : '今天已經吃夠了'}
                   </Text>
                 )}
               </View>
-              <View style={{ alignItems: 'flex-end', gap: 2 }}>
-                <Text style={[ui.text, { fontWeight: '700', fontSize: 16 }]}>{Math.round(t.kcal)} kcal</Text>
-                {meal.price != null && <Text style={ui.muted}>${meal.price}</Text>}
-              </View>
+              <Pressable
+                style={[ui.smallButton, { alignSelf: 'center' }]}
+                onPress={() =>
+                  router.push({ pathname: '/add', params: { date, mealType: addTypeFor(section.types) } })
+                }
+              >
+                <Text style={ui.smallButtonText}>＋ 記錄</Text>
+              </Pressable>
             </View>
-            <View style={[ui.row, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 8 }]}>
-              {(
-                [
-                  ['蛋白', t.protein, colors.protein],
-                  ['碳水', t.carbs, colors.carbs],
-                  ['脂肪', t.fat, colors.fat],
-                ] as const
-              ).map(([label, value, color]) => (
-                <Text key={label} style={[ui.muted, { flex: 1, textAlign: 'center' }]}>
-                  {label} <Text style={{ color, fontWeight: '700' }}>{Math.round(value)}g</Text>
-                </Text>
-              ))}
-            </View>
-          </Pressable>
+            {/* 其他區沒東西就不顯示「還沒記」，只留標題列可以新增 */}
+            {list.length === 0 && !isOther && <Text style={ui.muted}>還沒記</Text>}
+            {list.map((meal) => renderMeal(meal, isOther))}
+          </View>
         );
       })}
       {meals.length > 0 && <Text style={[ui.muted, { textAlign: 'center' }]}>點一下餐點編輯，長按刪除</Text>}
