@@ -1,17 +1,27 @@
+import { NavigationBar } from 'expo-navigation-bar';
 import { Stack, ThemeProvider } from 'expo-router';
 import { SQLiteProvider } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
+import * as SystemUI from 'expo-system-ui';
+import { useEffect } from 'react';
 import { ReminderSync } from '@/components/ReminderSync';
 import { useTheme } from '@/components/theme';
 import { DB_NAME, migrateDbIfNeeded } from '@/lib/db';
 
 export default function RootLayout() {
-  const { nav, dark } = useTheme();
+  const { nav, dark, colors } = useTheme();
+
+  // App 開著時切換深色模式，Android 不會重建畫面，最上、最下的系統列要自己跟著換
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(colors.bg);
+  }, [colors.bg]);
+
   return (
     <SQLiteProvider databaseName={DB_NAME} onInit={migrateDbIfNeeded}>
       {/* 標題列、分頁列跟著深色／淺色模式 */}
       <ThemeProvider value={nav}>
         <StatusBar style={dark ? 'light' : 'dark'} />
+        <NavigationBar style={dark ? 'light' : 'dark'} />
         <ReminderSync />
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

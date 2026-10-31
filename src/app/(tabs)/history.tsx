@@ -66,6 +66,36 @@ function recentMonths(): { key: string; label: string }[] {
   ];
 }
 
+/** 吃到目標的 95% 就算達標 */
+const HIT_RATIO = 0.95;
+
+function hits(day: DaySummary, goals: Totals) {
+  const g = goalsForDay(goals, day.exercise_kcal);
+  return { g, kcal: day.kcal >= g.kcal * HIT_RATIO, protein: day.protein >= g.protein * HIT_RATIO };
+}
+
+type HitRate = { label: string; days: number; kcal: number; protein: number; both: number };
+
+/** 最近 7、30 天的達標天數；只算有記錄的日子，今天還沒吃完不算 */
+function hitRates(summaries: DaySummary[], goals: Totals): HitRate[] {
+  const today = toDateKey();
+  return [7, 30].map((n) => {
+    const since = new Date();
+    since.setDate(since.getDate() - n);
+    const from = toDateKey(since);
+    const rate: HitRate = { label: `最近 ${n} 天`, days: 0, kcal: 0, protein: 0, both: 0 };
+    for (const d of summaries) {
+      if (d.date < from || d.date >= today || d.meal_count === 0) continue;
+      const h = hits(d, goals);
+      rate.days++;
+      if (h.kcal) rate.kcal++;
+      if (h.protein) rate.protein++;
+      if (h.kcal && h.protein) rate.both++;
+    }
+    return rate;
+  });
+}
+
 type WeekAvg = { label: string; avg: number; count: number };
 
 /** 最近 4 週（每 7 天一組）的平均體重，新的在前 */
@@ -97,6 +127,7 @@ export default function HistoryScreen() {
   const [goals, setGoals] = useState<Totals | null>(null);
   const [weeks, setWeeks] = useState<WeekAvg[]>([]);
   const [months, setMonths] = useState<MonthSpend[]>([]);
+  const [rates, setRates] = useState<HitRate[]>([]);
 
   useFocusEffect(
     useCallback(() => {
@@ -112,6 +143,7 @@ export default function HistoryScreen() {
         ]);
         setDays(fillDays(d));
         setGoals(s.goals);
+        setRates(hitRates(d, s.goals));
         setWeeks(weeklyAverages(w));
         setMonths(monthKeys.map((mk, i) => ({ label: mk.label, ...m[i] })));
       })();
@@ -129,6 +161,29 @@ export default function HistoryScreen() {
       keyExtractor={(d) => d.date}
       ListHeaderComponent={
         <View style={{ gap: 12, marginBottom: 4 }}>
+          <View style={ui.card}>
+            <Text style={ui.title}>達標率</Text>
+            {rates.every((r) => r.days === 0) && <Text style={ui.muted}>記滿一天後就會開始算。</Text>}
+            {rates
+              .filter((r) => r.days > 0)
+              .map((r) => {
+                const pct = (n: number) => `${Math.round((n / r.days) * 100)}%`;
+                return (
+                  <View key={r.label} style={{ gap: 2 }}>
+                    <Text style={[ui.text, { fontWeight: '700' }]}>
+                      {r.label} <Text style={ui.muted}>（有記錄 {r.days} 天）</Text>
+                    </Text>
+                    <Text style={ui.text}>
+                      熱量 {pct(r.kcal)}
+                      {'  ·  '}蛋白 {pct(r.protein)}
+                      {'  ·  '}
+                      <Text style={{ color: colors.carbs, fontWeight: '700' }}>都達標 {pct(r.both)}</Text>
+                    </Text>
+                  </View>
+                );
+              })}
+            <Text style={ui.muted}>吃到目標 95% 算達標，今天還沒結束不算。</Text>
+          </View>
           <View style={ui.card}>
             <Text style={ui.title}>餐費</Text>
             {months.map((m) => (
@@ -171,9 +226,10 @@ export default function HistoryScreen() {
         </View>
       }
       renderItem={({ item }) => {
-        const g = goals ? goalsForDay(goals, item.exercise_kcal) : null;
-        const kcalOk = g ? item.kcal >= g.kcal * 0.95 : false;
-        const proteinOk = g ? item.protein >= g.protein * 0.95 : false;
+        const h = goals ? hits(item, goals) : null;
+        const g = h?.g;
+        const kcalOk = !!h?.kcal;
+        const proteinOk = !!h?.protein;
         const missing = missingLabels(item);
         const empty = item.meal_count === 0;
         return (
