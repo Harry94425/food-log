@@ -22,8 +22,8 @@ export const PROVIDERS: Record<Provider, { label: string; keyUrl: string; defaul
   },
 };
 
-/** 預設的增肌目標（活動係數 1.375，已含每週 2–3 次重訓，騎車另計）；每個人要在設定頁改成自己的 */
-export const DEFAULT_GOALS: Totals = { kcal: 2350, protein: 90, fat: 65, carbs: 330 };
+/** 還沒填基本資料前暫用的一般目標；第一次使用時會依基本資料重新設定 */
+export const DEFAULT_GOALS: Totals = { kcal: 2000, protein: 75, fat: 55, carbs: 280 };
 
 export type Settings = { provider: Provider; models: Record<Provider, string>; goals: Totals };
 

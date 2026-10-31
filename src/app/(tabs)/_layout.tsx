@@ -1,12 +1,22 @@
-import { Tabs } from 'expo-router';
+import { router, Tabs } from 'expo-router';
 import { PlatformPressable } from 'expo-router/react-navigation';
+import { useSQLiteContext } from 'expo-sqlite';
+import { useEffect } from 'react';
 import { Text } from 'react-native';
+import { getProfile } from '@/lib/profile';
 
 function TabIcon({ glyph }: { glyph: string }) {
   return <Text style={{ fontSize: 18 }}>{glyph}</Text>;
 }
 
 export default function TabsLayout() {
+  const db = useSQLiteContext();
+
+  // 第一次使用（還沒填基本資料）先去填，才有適合自己的目標
+  useEffect(() => {
+    getProfile(db).then((p) => !p && router.replace('/onboarding'));
+  }, [db]);
+
   return (
     <Tabs
       screenOptions={{

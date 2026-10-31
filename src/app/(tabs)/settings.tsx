@@ -1,6 +1,6 @@
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, Text, View } from 'react-native';
@@ -10,6 +10,7 @@ import { StravaCard } from '@/components/StravaCard';
 import { Input } from '@/components/Input';
 import { useTheme } from '@/components/theme';
 import { exportCsv, toDateKey, Totals } from '@/lib/db';
+import { describeProfile, getProfile, Profile } from '@/lib/profile';
 import { DEFAULT_GOALS, getApiKey, getSettings, Provider, PROVIDERS, saveSettings, setApiKey } from '@/lib/settings';
 
 const PROVIDER_KEYS = Object.keys(PROVIDERS) as Provider[];
@@ -39,11 +40,13 @@ export default function SettingsScreen() {
   const [keyDraft, setKeyDraft] = useState('');
   const [hasKey, setHasKey] = useState<Record<Provider, boolean>>({ gemini: false, openai: false });
   const [goals, setGoals] = useState<GoalDraft>(toDraft(DEFAULT_GOALS));
+  const [profile, setProfile] = useState<Profile | null>(null);
 
   useFocusEffect(
     useCallback(() => {
       (async () => {
-        const [s, ...keys] = await Promise.all([getSettings(db), ...PROVIDER_KEYS.map(getApiKey)]);
+        const [s, p, ...keys] = await Promise.all([getSettings(db), getProfile(db), ...PROVIDER_KEYS.map(getApiKey)]);
+        setProfile(p);
         setProvider(s.provider);
         setModels(s.models);
         setHasKey(Object.fromEntries(PROVIDER_KEYS.map((p, i) => [p, !!keys[i]])) as Record<Provider, boolean>);
@@ -136,7 +139,7 @@ export default function SettingsScreen() {
       </View>
 
       <View style={ui.card}>
-        <Text style={ui.title}>每日目標（已含重訓）</Text>
+        <Text style={ui.title}>每日目標</Text>
         <Text style={ui.muted}>騎車、跑步等另外記錄的消耗會自動加上，並用碳水補足。</Text>
         {GOAL_FIELDS.map((f) => (
           <View key={f.key} style={ui.row}>
@@ -150,8 +153,9 @@ export default function SettingsScreen() {
             <Text style={[ui.muted, { width: 36 }]}>{f.unit}</Text>
           </View>
         ))}
-        <Pressable style={ui.smallButton} onPress={() => setGoals(toDraft(DEFAULT_GOALS))}>
-          <Text style={ui.smallButtonText}>恢復預設（增肌：2350 kcal / 蛋白 90g）</Text>
+        {profile && <Text style={ui.muted}>基本資料：{describeProfile(profile)}</Text>}
+        <Pressable style={ui.smallButton} onPress={() => router.push('/onboarding')}>
+          <Text style={ui.smallButtonText}>{profile ? '修改基本資料、重新設定目標' : '填基本資料，自動設定目標'}</Text>
         </Pressable>
       </View>
 

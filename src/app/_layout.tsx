@@ -27,6 +27,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="add" options={{ title: '新增餐點', presentation: 'modal' }} />
           <Stack.Screen name="day/[date]" options={{ title: '當日紀錄' }} />
+          <Stack.Screen name="onboarding" options={{ title: '基本資料' }} />
           <Stack.Screen name="strava-connect" options={{ title: '連結 Strava', presentation: 'modal' }} />
         </Stack>
       </SQLiteProvider>
