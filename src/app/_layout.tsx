@@ -17,11 +17,11 @@ export default function RootLayout() {
   }, [colors.bg]);
 
   return (
-    <SQLiteProvider databaseName={DB_NAME} onInit={migrateDbIfNeeded}>
-      {/* 標題列、分頁列跟著深色／淺色模式 */}
-      <ThemeProvider value={nav}>
-        <StatusBar style={dark ? 'light' : 'dark'} />
-        <NavigationBar style={dark ? 'light' : 'dark'} />
+    // 主題要包在 SQLiteProvider 外面：它的 memo 不比對 children，包在裡面的話切換深淺色時標題列、分頁列不會更新
+    <ThemeProvider value={nav}>
+      <StatusBar style={dark ? 'light' : 'dark'} />
+      <NavigationBar style={dark ? 'light' : 'dark'} />
+      <SQLiteProvider databaseName={DB_NAME} onInit={migrateDbIfNeeded}>
         <ReminderSync />
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -29,7 +29,7 @@ export default function RootLayout() {
           <Stack.Screen name="day/[date]" options={{ title: '當日紀錄' }} />
           <Stack.Screen name="strava-connect" options={{ title: '連結 Strava', presentation: 'modal' }} />
         </Stack>
-      </ThemeProvider>
-    </SQLiteProvider>
+      </SQLiteProvider>
+    </ThemeProvider>
   );
 }
