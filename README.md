@@ -55,7 +55,8 @@ npx eas-cli@latest build -p android --profile preview
 
 需要免費的 Expo 帳號。完成後下載 APK 裝到手機。
 
-- 版本號由 EAS 管理，每次打包自動加 1
+- 版本名稱（`app.json` 的 `version`）自己改：修 bug 加第三位（1.1.0 → 1.1.1）、加功能加第二位（1.1.0 → 1.2.0）；GitHub Release 標籤用同一個號碼（`v1.2.0`）
+- 內部版本號（versionCode）由 EAS 管理，每次打包自動加 1
 - 之後的新版直接覆蓋安裝，資料會保留；**移除 App 會清掉所有紀錄**
 - Expo Go 裡的資料不會帶到 APK
 - APK 要用同一個 Expo 帳號打包（簽章金鑰存在 EAS），換帳號就不能覆蓋安裝
