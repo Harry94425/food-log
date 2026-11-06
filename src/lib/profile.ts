@@ -17,6 +17,8 @@ export type Profile = {
   goal: GoalType;
   /** 重訓、球類等「不會另外記錄」的運動量；騎車、跑步從 Strava 每天另外加 */
   activity: Activity;
+  /** 目標體重；舊版資料沒有 */
+  targetWeightKg?: number;
 };
 
 export const SEX_LABELS: Record<Sex, string> = { male: '男', female: '女' };
@@ -51,7 +53,51 @@ export async function saveProfile(db: SQLiteDatabase, p: Profile) {
 }
 
 export function describeProfile(p: Profile) {
-  return `${SEX_LABELS[p.sex]}、${p.age} 歲、${p.heightCm} cm、${p.weightKg} kg，目標${GOAL_LABELS[p.goal]}，運動${ACTIVITY_LABELS[p.activity]}`;
+  const target = p.targetWeightKg ? `（目標體重 ${p.targetWeightKg} kg）` : '';
+  return `${SEX_LABELS[p.sex]}、${p.age} 歲、${p.heightCm} cm、${p.weightKg} kg，目標${GOAL_LABELS[p.goal]}${target}，運動${ACTIVITY_LABELS[p.activity]}`;
+}
+
+/** 國健署成人健康體位：18.5 ≤ BMI < 24 */
+export const HEALTHY_BMI: [number, number] = [18.5, 24];
+
+export function bmi(weightKg: number, heightCm: number) {
+  return weightKg / (heightCm / 100) ** 2;
+}
+
+export function bmiLabel(value: number) {
+  if (value < HEALTHY_BMI[0]) return '過輕';
+  if (value < HEALTHY_BMI[1]) return '健康';
+  if (value < 27) return '過重';
+  return '肥胖';
+}
+
+/** 某個 BMI 對應的體重 */
+export function weightForBmi(value: number, heightCm: number) {
+  return value * (heightCm / 100) ** 2;
+}
+
+const half = (kg: number) => Math.round(kg * 2) / 2;
+
+/**
+ * 依 BMI 建議目標體重：
+ * 增肌先到 BMI 22（健康範圍中間），已經超過就再增 2 kg；
+ * 減脂先回到健康範圍上限，已經在範圍內就少 2 kg、但不低於 BMI 20；維持就是現在的體重
+ */
+export function suggestTargetWeight(goal: GoalType, weightKg: number, heightCm: number) {
+  const mid = weightForBmi(22, heightCm);
+  if (goal === 'gain') return half(weightKg < mid ? mid : weightKg + 2);
+  if (goal === 'lose') {
+    const upper = weightForBmi(HEALTHY_BMI[1], heightCm);
+    return half(weightKg > upper ? upper : Math.max(weightKg - 2, weightForBmi(20, heightCm)));
+  }
+  return half(weightKg);
+}
+
+/** 每週大概變化多少（kg，正負號跟方向一致），用來估要幾週 */
+export function weeklyRate(goal: GoalType, weightKg: number) {
+  if (goal === 'gain') return 0.3;
+  if (goal === 'lose') return -weightKg * 0.0075;
+  return 0;
 }
 
 /**

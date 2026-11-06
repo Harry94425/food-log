@@ -2,7 +2,7 @@
   "expo": {
     "name": "飲食紀錄",
     "slug": "food-log",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",

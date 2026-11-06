@@ -2,6 +2,7 @@ import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
+import { LineChart, Point } from '@/components/LineChart';
 import { useTheme } from '@/components/theme';
 import {
   DaySummary,
@@ -13,8 +14,11 @@ import {
   Totals,
   weekdayLabel,
 } from '@/lib/db';
-import { GoalType, getProfile } from '@/lib/profile';
+import { GoalType, getProfile, weeklyRate } from '@/lib/profile';
 import { getSettings, goalsForDay } from '@/lib/settings';
+
+/** 折線圖看最近幾天 */
+const CHART_DAYS = 30;
 
 /** 沒紀錄的日子也列出來：至少最近 MIN_DAYS 天，最多往回到 MAX_DAYS 天 */
 const MIN_DAYS = 7;
@@ -176,12 +180,18 @@ export default function HistoryScreen() {
   const [months, setMonths] = useState<MonthSpend[]>([]);
   const [rates, setRates] = useState<HitRate[]>([]);
   const [goalType, setGoalType] = useState<GoalType>('gain');
+  const [targetWeight, setTargetWeight] = useState<number | null>(null);
+  const [spendPoints, setSpendPoints] = useState<Point[]>([]);
+  const [weightPoints, setWeightPoints] = useState<Point[]>([]);
+  // 折線圖預設收起，點卡片才展開
+  const [showSpendChart, setShowSpendChart] = useState(false);
+  const [showWeightChart, setShowWeightChart] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       (async () => {
         const since = new Date();
-        since.setDate(since.getDate() - 28);
+        since.setDate(since.getDate() - (CHART_DAYS - 1));
         const monthKeys = recentMonths();
         const [d, s, p, w, ...m] = await Promise.all([
           getDaySummaries(db),
@@ -194,13 +204,41 @@ export default function HistoryScreen() {
         setGoals(s.goals);
         setRates(hitRates(d, s.goals));
         setGoalType(p?.goal ?? 'gain');
+        setTargetWeight(p?.targetWeightKg ?? null);
         setWeeks(weeklyAverages(w));
+        setWeightPoints(w.map((x) => ({ date: x.date, value: x.kg })));
+        // 只畫有記帳的日子；沒填價錢不代表花 0 元
+        const from = toDateKey(since);
+        setSpendPoints(
+          d
+            .filter((x) => x.date >= from && x.spent > 0)
+            .map((x) => ({ date: x.date, value: x.spent }))
+            .sort((a, b) => a.date.localeCompare(b.date)),
+        );
         setMonths(monthKeys.map((mk, i) => ({ label: mk.label, ...m[i] })));
       })();
     }, [db]),
   );
 
   const advice = weightAdvice(goalType, weeks);
+  // 離目標體重還差多少：用最近一週平均，沒有就用最新一筆
+  const currentWeight = weeks[0]?.avg ?? weightPoints[weightPoints.length - 1]?.value ?? null;
+  const progress = (() => {
+    if (targetWeight == null || currentWeight == null) return null;
+    const gap = targetWeight - currentWeight;
+    if (Math.abs(gap) < 0.5) return `目標 ${targetWeight} kg · 已經達到 🎉 可以到設定重新設定目標`;
+    const rate = weeklyRate(goalType, currentWeight);
+    const sign = gap > 0 ? '+' : '';
+    // 方向跟目標一致才估週數
+    const weeksLeft = rate !== 0 && Math.sign(rate) === Math.sign(gap) ? Math.ceil(gap / rate) : null;
+    return `目標 ${targetWeight} kg · 還差 ${sign}${gap.toFixed(1)} kg${weeksLeft ? ` · 每週 ${rate > 0 ? '+' : ''}${rate.toFixed(1)} kg 約 ${weeksLeft} 週` : ''}`;
+  })();
+  const chartTo = toDateKey();
+  const chartFrom = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - (CHART_DAYS - 1));
+    return toDateKey(d);
+  })();
 
   return (
     <FlatList
@@ -233,8 +271,11 @@ export default function HistoryScreen() {
               })}
             <Text style={ui.muted}>吃到目標 95% 算達標，今天還沒結束不算。</Text>
           </View>
-          <View style={ui.card}>
-            <Text style={ui.title}>餐費</Text>
+          <Pressable style={ui.card} onPress={() => setShowSpendChart((v) => !v)} disabled={spendPoints.length === 0}>
+            <View style={[ui.row, { justifyContent: 'space-between' }]}>
+              <Text style={ui.title}>餐費</Text>
+              {spendPoints.length > 0 && <Text style={ui.muted}>{showSpendChart ? '收起 ▴' : '折線圖 ▾'}</Text>}
+            </View>
             {months.map((m) => (
               <Text key={m.label} style={ui.text}>
                 {m.label}：${Math.round(m.total)}
@@ -245,10 +286,39 @@ export default function HistoryScreen() {
                 )}
               </Text>
             ))}
-          </View>
-          <View style={ui.card}>
-            <Text style={ui.title}>體重週平均</Text>
+            {showSpendChart && spendPoints.length > 0 && (
+              <>
+                <Text style={ui.muted}>最近 {CHART_DAYS} 天每天餐費（按住拖曳看每一天）</Text>
+                <LineChart
+                  data={spendPoints}
+                  from={chartFrom}
+                  to={chartTo}
+                  color={colors.primary}
+                  format={(v) => `$${Math.round(v)}`}
+                  zeroBased
+                />
+              </>
+            )}
+          </Pressable>
+          <Pressable style={ui.card} onPress={() => setShowWeightChart((v) => !v)} disabled={weightPoints.length === 0}>
+            <View style={[ui.row, { justifyContent: 'space-between' }]}>
+              <Text style={ui.title}>體重</Text>
+              {weightPoints.length > 0 && <Text style={ui.muted}>{showWeightChart ? '收起 ▴' : '折線圖 ▾'}</Text>}
+            </View>
             {weeks.length === 0 && <Text style={ui.muted}>還沒有體重紀錄，建議每週量 3 次。</Text>}
+            {showWeightChart && weightPoints.length > 0 && (
+              <>
+                <Text style={ui.muted}>最近 {CHART_DAYS} 天（按住拖曳看每一天）</Text>
+                <LineChart
+                  data={weightPoints}
+                  from={chartFrom}
+                  to={chartTo}
+                  color={colors.primary}
+                  format={(v) => `${v.toFixed(1)} kg`}
+                />
+              </>
+            )}
+            {weeks.length > 0 && <Text style={[ui.text, { fontWeight: '600' }]}>週平均</Text>}
             {weeks.map((w, i) => {
               const prev = weeks[i + 1];
               const diff = prev ? w.avg - prev.avg : null;
@@ -265,9 +335,10 @@ export default function HistoryScreen() {
                 </Text>
               );
             })}
+            {progress && <Text style={[ui.text, { fontWeight: '600' }]}>{progress}</Text>}
             <Text style={ui.muted}>{advice.target}</Text>
             {advice.warning && <Text style={[ui.text, { color: colors.fat }]}>{advice.warning}</Text>}
-          </View>
+          </Pressable>
         </View>
       }
       renderItem={({ item }) => {
