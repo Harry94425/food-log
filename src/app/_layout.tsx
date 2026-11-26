@@ -4,6 +4,7 @@ import { SQLiteProvider } from 'expo-sqlite';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
 import { useEffect } from 'react';
+import { PhotoRecovery } from '@/components/PhotoRecovery';
 import { ReminderSync } from '@/components/ReminderSync';
 import { useTheme } from '@/components/theme';
 import { DB_NAME, migrateDbIfNeeded } from '@/lib/db';
@@ -23,6 +24,7 @@ export default function RootLayout() {
       <NavigationBar style={dark ? 'light' : 'dark'} />
       <SQLiteProvider databaseName={DB_NAME} onInit={migrateDbIfNeeded}>
         <ReminderSync />
+        <PhotoRecovery />
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="add" options={{ title: '新增餐點', presentation: 'modal' }} />
