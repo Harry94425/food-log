@@ -1,8 +1,9 @@
 import { File } from 'expo-file-system';
 import { router, Stack, useLocalSearchParams, usePreventRemove } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Image } from 'expo-image';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import { DateField } from '@/components/DateField';
 import { DraftItem, emptyItem, fromDraft, ItemEditor, toDraft } from '@/components/ItemEditor';
 import { KeyboardScrollView } from '@/components/KeyboardScrollView';
@@ -22,7 +23,7 @@ import {
   toDateKey,
   updateMeal,
 } from '@/lib/db';
-import { deletePhoto, persistPhoto, pickPhoto, PickedPhoto } from '@/lib/photo';
+import { deletePhoto, persistPhoto, PhotoPurpose, pickPhoto, PickedPhoto, takeRecoveredPhoto } from '@/lib/photo';
 import { getSavedProduct, lookupOpenFoodFacts, saveProduct } from '@/lib/products';
 import { scheduleReminders } from '@/lib/reminders';
 import { LABEL_TASK, MEAL_TASK } from '@/lib/recognizer/tasks';
@@ -45,7 +46,7 @@ const snap = (s: Snapshot) => JSON.stringify(s);
 export default function MealEditorScreen() {
   const { colors, ui } = useTheme();
   const db = useSQLiteContext();
-  const params = useLocalSearchParams<{ date?: string; id?: string; mealType?: MealType }>();
+  const params = useLocalSearchParams<{ date?: string; id?: string; mealType?: MealType; recovered?: string }>();
   const editId = params.id ? Number(params.id) : null;
 
   const [date, setDate] = useState(params.date ?? toDateKey());
@@ -133,13 +134,24 @@ export default function MealEditorScreen() {
 
   const photoUri = photo?.uri ?? savedPhotoUri;
 
+  /** 記下這個畫面的參數，App 被系統殺掉後才能回到同一筆 */
+  const purposeFor = (kind: PhotoPurpose['kind'], barcode?: string): PhotoPurpose => ({
+    kind,
+    barcode,
+    date: params.date,
+    mealType: params.mealType,
+    id: params.id,
+  });
+
+  const applyPhoto = (p: PickedPhoto) => {
+    setPhoto(p);
+    recognize(p);
+  };
+
   const choose = async (source: 'camera' | 'library') => {
     try {
-      const p = await pickPhoto(source);
-      if (p) {
-        setPhoto(p);
-        recognize(p);
-      }
+      const p = await pickPhoto(source, purposeFor('meal'));
+      if (p) applyPhoto(p);
     } catch (e) {
       Alert.alert('無法取得照片', (e as Error).message);
     }
@@ -247,12 +259,15 @@ export default function MealEditorScreen() {
   const readLabel = async (source: 'camera' | 'library', barcode: string) => {
     let p: PickedPhoto | null;
     try {
-      p = await pickPhoto(source);
+      p = await pickPhoto(source, purposeFor('label', barcode));
     } catch (e) {
       Alert.alert('無法取得照片', (e as Error).message);
       return;
     }
-    if (!p) return;
+    if (p) recognizeLabel(p, barcode);
+  };
+
+  const recognizeLabel = async (p: PickedPhoto, barcode: string) => {
     setBusy(true);
     setStatus('讀取營養標示中…');
     try {
@@ -270,6 +285,21 @@ export default function MealEditorScreen() {
       setStatus('');
     }
   };
+
+  // 拍照時 App 被 Android 殺掉、重新開起來：把撈回來的照片接著處理（編輯時等舊資料讀完）
+  const recoveryDone = useRef(false);
+  useEffect(() => {
+    if (recoveryDone.current || !loaded || params.recovered !== '1') return;
+    recoveryDone.current = true;
+    const r = takeRecoveredPhoto();
+    if (!r) return;
+    const { photo: p, purpose } = r;
+    // 放到下一輪再做，不要在 effect 裡直接改 state
+    Promise.resolve().then(() =>
+      purpose.kind === 'label' && purpose.barcode ? recognizeLabel(p, purpose.barcode) : applyPhoto(p),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只在讀完資料後跑一次
+  }, [loaded, params.recovered]);
 
   const addLabelItem = (item: FoodItem) => {
     setItems((prev) => [...prev, toDraft(item)]);
@@ -406,7 +436,7 @@ export default function MealEditorScreen() {
       </Pressable>
       <BarcodeScanner visible={scanning} onScanned={onBarcode} onClose={() => setScanning(false)} />
 
-      {photoUri && <Image source={{ uri: photoUri }} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 12 }} />}
+      {photoUri && <Image source={{ uri: photoUri }} contentFit="cover" style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 12 }} />}
 
       {photoUri && (
         <Pressable style={ui.buttonOutline} onPress={() => recognize()} disabled={busy}>

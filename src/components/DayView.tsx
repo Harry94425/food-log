@@ -1,7 +1,8 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useCallback, useState } from 'react';
-import { Alert, Image, Pressable, Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import { Alert, Pressable, Text, View } from 'react-native';
 import {
   defaultMealType,
   deleteExercise,
@@ -107,7 +108,12 @@ export function DayView({ date }: { date: string }) {
       >
         <View style={[ui.row, { alignItems: 'center', gap: 12 }]}>
           {meal.photo_uri && (
-            <Image source={{ uri: meal.photo_uri }} style={{ width: 56, height: 56, borderRadius: 8 }} />
+            <Image
+              source={{ uri: meal.photo_uri }}
+              recyclingKey={meal.photo_uri}
+              contentFit="cover"
+              style={{ width: 56, height: 56, borderRadius: 8 }}
+            />
           )}
           <View style={{ flex: 1, gap: 2 }}>
             {(showType || meal.store) && (
