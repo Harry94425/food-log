@@ -2,7 +2,8 @@ import { File } from 'expo-file-system';
 import { router, Stack, useLocalSearchParams, usePreventRemove } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Pressable, Text, View } from 'react-native';
+import { Image } from 'expo-image';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import { DateField } from '@/components/DateField';
 import { DraftItem, emptyItem, fromDraft, ItemEditor, toDraft } from '@/components/ItemEditor';
 import { KeyboardScrollView } from '@/components/KeyboardScrollView';
@@ -435,7 +436,7 @@ export default function MealEditorScreen() {
       </Pressable>
       <BarcodeScanner visible={scanning} onScanned={onBarcode} onClose={() => setScanning(false)} />
 
-      {photoUri && <Image source={{ uri: photoUri }} style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 12 }} />}
+      {photoUri && <Image source={{ uri: photoUri }} contentFit="cover" style={{ width: '100%', aspectRatio: 4 / 3, borderRadius: 12 }} />}
 
       {photoUri && (
         <Pressable style={ui.buttonOutline} onPress={() => recognize()} disabled={busy}>
